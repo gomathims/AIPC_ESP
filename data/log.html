@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="css/style.css?##VERSION##" />
+  <link rel="stylesheet" href="css/style_additional.css?##VERSION##" />
+  <link rel="icon" href="favicon.ico" type="image/x-icon" />
+  <title>Event Log — Meter</title>
+</head>
+
+<body>
+  <div class="main-container">
+    <header class="nav-bar">
+      <a href="/" style="float:left;"><img src="images/logo.png" class="logo" onerror="this.style.display='none'" /></a>
+      <br clear="all" />
+      <hr style="margin:5px 0; border-top:1px solid #ccc;" />
+      <h2 class="wpg-heading" id="switchNameText">Meter</h2>
+    </header>
+
+    <div class="page" style="margin-top:6.5rem;">
+      <div class="padding-outer">
+        <a href="/" style="font-size:.8rem; color:#1565c0; text-decoration:none;">‹ Back</a>
+        <h4 class="main-heading" style="float:left;">Event Log</h4>
+        <div style="float:right;">
+          <input type="button" class="cn button" value="Clear" onclick="clearLogs()" style="margin-right:6px;" />
+          <input type="button" class="cn button" value="Refresh" onclick="loadLogs()" />
+        </div>
+        <br clear="all" />
+        <div id="logContent" class="cn" style="margin-top:12px; font-size:.82rem;">Loading…</div>
+        <p id="logMsg" class="cn" style="min-height:16px;"></p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var EV_MSG = { 0: "Device restarted" };
+    var RESET_MSG = {
+      0: "Power on", 1: "Hardware watchdog", 2: "Exception", 3: "Software watchdog",
+      4: "Software restart", 5: "Wake from deep sleep", 6: "External reset"
+    };
+
+    var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    function p2(n) { return (n < 10 ? "0" : "") + n; }
+    function fmtTs(ts) {
+      if (!ts) return "—";
+      var d = new Date(ts * 1000);
+      var date = p2(d.getUTCDate()) + " " + MONTHS[d.getUTCMonth()] + " " + d.getUTCFullYear();
+      var h = d.getUTCHours(), ap = h >= 12 ? "pm" : "am", h12 = (h % 12) || 12;
+      var time = h12 + ":" + p2(d.getUTCMinutes()) + ":" + p2(d.getUTCSeconds()) + " " + ap;
+      return date + "<br>" + time;
+    }
+
+    function guard(r) { if (r.status === 401) { window.location.href = "/"; throw new Error("unauth"); } return r; }
+
+    function loadLogs() {
+      var box = document.getElementById("logContent");
+      box.textContent = "Loading…";
+      fetch("/api/getLogs").then(guard)
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          var logs = res.logs || [];
+          if (!logs.length) { box.textContent = "No events logged yet."; return; }
+          var html = '<table style="width:100%; border-collapse:collapse; table-layout:fixed;">';
+          logs.forEach(function (e) {
+            var msg = EV_MSG[e.ev] || ("Event " + e.ev);
+            if (e.ev === 0) {
+              var reason = RESET_MSG[e.rc] || "Unknown";
+              msg += '<br><span style="color:#999;">' + reason + '</span>';
+            }
+            html += '<tr style="border-bottom:1px solid #eee;">' +
+              '<td style="width:38%; padding:6px; white-space:nowrap; vertical-align:top; color:#555;">' + fmtTs(e.ts) + '</td>' +
+              '<td style="padding:6px; vertical-align:top;">' + msg + '</td></tr>';
+          });
+          html += "</table>";
+          box.innerHTML = html;
+        })
+        .catch(function () { box.textContent = "Couldn't load logs."; });
+    }
+
+    function clearLogs() {
+      if (!confirm("Clear all event logs?")) return;
+      var pin = window.prompt("Enter your device PIN to clear the logs:");
+      if (pin === null) return;
+      if (!/^\d{4}$/.test(pin)) { document.getElementById("logMsg").textContent = "Enter your 4-digit PIN."; return; }
+      fetch("/api/clearLogs", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ authPin: pin })
+      }).then(guard)
+        .then(function (r) { return r.text().then(function (t) {
+          var m = document.getElementById("logMsg");
+          m.textContent = t; m.style.color = r.ok ? "#2e7d32" : "#d32f2f";
+          if (r.ok) loadLogs();
+        }); })
+        .catch(function () { document.getElementById("logMsg").textContent = "Request failed."; });
+    }
+
+    fetch("/api/deviceName").then(function (r) { return r.text(); }).then(function (n) {
+      if (n) { document.getElementById("switchNameText").textContent = n; document.title = "Event Log — " + n; }
+    }).catch(function () {});
+
+    window.addEventListener("load", loadLogs);
+  </script>
+</body>
+
+</html>

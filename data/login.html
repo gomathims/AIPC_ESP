@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="css/style.css?##VERSION##" />
+  <link rel="icon" href="favicon.ico" type="image/x-icon" />
+  <title>Meter — Unlock</title>
+  <style>
+    body { background: #fff; }
+    .login-wrapper { padding: 1.5rem 0.5rem; }
+    .login-body {
+      background: #FAFAFA; border: 1px solid rgba(0,66,37,.18); border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,.08); padding: 16px 20px; max-width: 360px; margin: 0 auto;
+    }
+    .login-field { margin-bottom: 14px; }
+    .login-field label { font-size: .78rem; color: #666; font-weight: 500; display: block; margin-bottom: 4px; }
+    .field-row { display: flex; align-items: center; gap: 6px; }
+    .login-input {
+      width: 140px; padding: 6px 12px; border: 1px solid #ddd; border-radius: 8px;
+      font-size: .9rem; background: #fff; outline: none;
+    }
+    .login-input:focus { border-color: #2e7d32; }
+    .login-eye { cursor: pointer; color: #999; display: flex; align-items: center; }
+    .login-eye svg { width: 20px; height: 20px; }
+    .login-submit-btn {
+      display: block; width: 100%; background: #2e3b2e; color: #fff; border: none;
+      border-radius: 4px; font-size: .95rem; font-weight: 600; cursor: pointer; padding: 9px 12px;
+    }
+    .login-submit-btn:active { transform: scale(.98); }
+    #error-msg { color: #d32f2f; font-size: .82rem; margin-top: 10px; text-align: center; }
+  </style>
+</head>
+
+<body>
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none;">
+    <symbol id="icon-eye" viewBox="0 0 576 512">
+      <path d="M288 0C128.94 0 3.85 114.61.3 266.34c-.8 32.34 11.94 63.22 36.02 87.29 10.1 10.09 20.68 19.2 31.87 27.5 62.94 44.48 143.53 68.87 219.82 68.87 144.1 0 269.5-114.6 273-266.34C575.7 82.65 463.96 0 288 0zM287.6 368c-52.76 0-95.96-43.23-95.96-96s43.2-96 95.96-96c52.77 0 95.98 43.22 95.98 96S340.37 368 287.6 368zm0-160a63.73 63.73 0 0 0-63.71 63.7 63.7 63.7 0 0 0 127.41 0A63.73 63.73 0 0 0 287.6 208z"/>
+    </symbol>
+  </svg>
+
+  <div class="main-container">
+    <header class="nav-bar">
+      <a href="/" style="float:left;"><img src="images/logo.png" class="logo" onerror="this.style.display='none'" /></a>
+      <br clear="all" />
+      <hr style="margin:5px 0; border-top:1px solid #ccc;" />
+      <h2 class="wpg-heading" id="switchNameText">Meter</h2>
+    </header>
+
+    <div class="page" style="margin-top:6.5rem;">
+      <div class="login-wrapper">
+        <p style="font-size:.82rem; color:#888; margin:6px 0 10px; text-align:center;">Enter your PIN to unlock the device.</p>
+        <div class="login-body">
+          <div class="login-field">
+            <label for="pin">Security PIN</label>
+            <div class="field-row">
+              <input type="password" id="pin" class="login-input" maxlength="4" minlength="4" inputmode="numeric" />
+              <span class="login-eye" onclick="viewPassword('pin')">
+                <svg viewBox="0 0 576 512"><use href="#icon-eye"></use></svg>
+              </span>
+            </div>
+          </div>
+          <input type="button" id="submitPin" class="login-submit-btn" value="Unlock" />
+          <p id="error-msg"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function viewPassword(id) {
+      var el = document.getElementById(id);
+      el.type = el.type === "password" ? "text" : "password";
+    }
+
+    fetch("/api/deviceName").then(function (r) { return r.text(); }).then(function (name) {
+      if (name) {
+        document.getElementById("switchNameText").textContent = name;
+        document.title = name + " — Unlock";
+      }
+    }).catch(function () {});
+
+    function doLogin() {
+      var pin = document.getElementById("pin").value;
+      var msg = document.getElementById("error-msg");
+      if (!pin || pin.length < 4) { msg.textContent = "Enter a 4-digit PIN."; return; }
+      var now = new Date();
+      var localEpoch = Math.floor(now.getTime() / 1000) - now.getTimezoneOffset() * 60;
+      var body = JSON.stringify({
+        devicePin: pin,
+        localEpoch: localEpoch,
+        deviceTime: now.toISOString().replace(/\.\d{3}Z$/, "Z"),
+        timezoneOffset: -now.getTimezoneOffset()
+      });
+      fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: body })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.success) {
+            window.location.href = "/";
+          } else {
+            msg.textContent = d.message || "Incorrect PIN.";
+          }
+        })
+        .catch(function () { msg.textContent = "An error occurred. Try again."; });
+    }
+
+    document.getElementById("submitPin").addEventListener("click", doLogin);
+    document.getElementById("pin").addEventListener("keypress", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); doLogin(); }
+    });
+  </script>
+</body>
+
+</html>

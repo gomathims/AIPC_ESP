@@ -1,0 +1,10 @@
+<svg id="wifi-icon" width="64px" height="64px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" 
+    fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+
+    <g id="wifi-excellent">
+        <circle cx="12" cy="18" r="2" stroke="black" fill="black"></circle>
+        <path d="M7.5 14c2.5-2 6.5-2 9 0" stroke="black"></path>  
+        <path d="M4.5 12c4-4 11-4 15 0" stroke="#cccccc"></path> 
+    </g>
+
+</svg>

@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="css/style.css?##VERSION##" />
+  <link rel="stylesheet" href="css/style_additional.css?##VERSION##" />
+  <link rel="icon" href="favicon.ico" type="image/x-icon" />
+  <script src="scripts/app.js?##VERSION##" defer></script>
+  <title>3-Phase Meter</title>
+</head>
+
+<body>
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none;">
+    <symbol id="icon-eye" viewBox="0 0 576 512">
+      <path d="M288 0C128.94 0 3.85 114.61.3 266.34c-.8 32.34 11.94 63.22 36.02 87.29 10.1 10.09 20.68 19.2 31.87 27.5 62.94 44.48 143.53 68.87 219.82 68.87 144.1 0 269.5-114.6 273-266.34C575.7 82.65 463.96 0 288 0zM287.6 368c-52.76 0-95.96-43.23-95.96-96s43.2-96 95.96-96c52.77 0 95.98 43.22 95.98 96S340.37 368 287.6 368zm0-160a63.73 63.73 0 0 0-63.71 63.7 63.7 63.7 0 0 0 127.41 0A63.73 63.73 0 0 0 287.6 208z"/>
+    </symbol>
+  </svg>
+
+  <div class="main-container">
+    <header class="nav-bar">
+      <div id="header-brand-bar" style="display:flex; align-items:center; justify-content:space-between;">
+        <a href="/">
+          <img src="images/logo.png" class="logo" onerror="this.style.display='none'" />
+        </a>
+        <div style="display:flex; flex-direction:column; align-items:center;">
+          <div class="logo-images">
+            <img src="images/wifi_e.svg" id="wifi-e" title="WiFi Excellent" style="display:none;" />
+            <img src="images/wifi_g.svg" id="wifi-g" title="WiFi Good" style="display:none;" />
+            <img src="images/wifi_w.svg" id="wifi-w" title="WiFi Weak" style="display:none;" />
+            <img src="images/ap.png" id="apIcon" title="Access Point" style="display:none;" />
+          </div>
+          <span id="apwifiName" style="display:block; font-size:.6rem;"></span>
+        </div>
+      </div>
+
+      <div class="v9-header-row" style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+        <h2 class="wpg-heading" style="display:block; flex-shrink:1; min-width:0;" id="switchNameText">Meter</h2>
+        <nav class="menu-bar" id="menu-bar-nav"
+             style="position:static; margin-left:auto; display:flex; flex-direction:row; box-shadow:none; width:auto; background:transparent; padding:0; gap:2px;">
+          <div class="main_menu menu-1 active" onclick="showContent('menu-1')">
+            <img src="images/home.png" alt="Home" /><span class="nav-label">Home</span>
+          </div>
+          <div class="main_menu menu-3" onclick="showContent('menu-3')">
+            <img src="images/power.png" alt="Protection" /><span class="nav-label">Protection</span>
+          </div>
+          <div class="main_menu menu-2" onclick="showContent('menu-2')">
+            <img src="images/settings.png" alt="Settings" /><span class="nav-label">Settings</span>
+          </div>
+        </nav>
+      </div>
+    </header>
+
+    <div class="page" style="margin-top:6.5rem;">
+      <main id="content">
+        <!-- ============ HOME ============ -->
+        <div class="home-container gap-flex content-div active" id="menu-1">
+          <div id="main-switch-container" class="padding-outer" style="padding:1rem">
+            <!-- Time (top) -->
+            <div id="systemTime" style="text-align:center; font-size:.78rem; color:#777;">—</div>
+
+            <!-- Per-phase cards: each phase in its own colour with its V/I/P/E -->
+            <!-- .phase-cell: one parameter (label / value / unit). Grid = 2x2 per box. -->
+            <!-- Three phase boxes in a row (side by side) on both desktop and mobile. -->
+            <style>
+              .phase-row { display:flex; gap:6px; margin-top:10px; }
+              .phase-box { flex:1 1 0; min-width:0; border-radius:10px; padding:8px 4px; border:1px solid; }
+              .phase-name { font-weight:700; font-size:.82rem; margin-bottom:8px; text-align:center; }
+              .phase-grid { display:flex; flex-direction:column; gap:7px; }
+              .phase-cell { text-align:center; line-height:1.15; }
+              .phase-cell .pl { display:block; font-size:.6rem; color:#777; }
+              .phase-cell .pv { font-size:1.02rem; font-weight:700; color:#222; }
+              .phase-cell .pu { font-size:.58rem; color:#999; }
+              .total-row { margin-top:16px; padding-top:12px; border-top:1px solid #eee;
+                           display:flex; justify-content:space-around; text-align:center; }
+              .total-row .tl { font-size:.66rem; color:#888; display:block; margin-bottom:2px; }
+              .total-row .tv { font-size:1.1rem; font-weight:700; color:#333; }
+              .total-row .tu { font-size:.6rem; color:#999; }
+            </style>
+
+            <div class="phase-row">
+              <div class="phase-box" style="background:#ffebee; border-color:#ffcdd2;">
+                <div class="phase-name" style="color:#c62828;">L1</div>
+                <div class="phase-grid">
+                  <div class="phase-cell"><span class="pl">Voltage</span><b class="pv" id="v1">0</b> <span class="pu">V</span></div>
+                  <div class="phase-cell"><span class="pl">Current</span><b class="pv" id="i1">0</b> <span class="pu">A</span></div>
+                  <div class="phase-cell"><span class="pl">Power</span><b class="pv" id="p1">0</b> <span class="pu">W</span></div>
+                  <div class="phase-cell"><span class="pl">Energy</span><b class="pv" id="e1">0</b> <span class="pu">kWh</span></div>
+                </div>
+              </div>
+
+              <div class="phase-box" style="background:#fffde7; border-color:#fff9c4;">
+                <div class="phase-name" style="color:#f57f17;">L2</div>
+                <div class="phase-grid">
+                  <div class="phase-cell"><span class="pl">Voltage</span><b class="pv" id="v2">0</b> <span class="pu">V</span></div>
+                  <div class="phase-cell"><span class="pl">Current</span><b class="pv" id="i2">0</b> <span class="pu">A</span></div>
+                  <div class="phase-cell"><span class="pl">Power</span><b class="pv" id="p2">0</b> <span class="pu">W</span></div>
+                  <div class="phase-cell"><span class="pl">Energy</span><b class="pv" id="e2">0</b> <span class="pu">kWh</span></div>
+                </div>
+              </div>
+
+              <div class="phase-box" style="background:#e3f2fd; border-color:#bbdefb;">
+                <div class="phase-name" style="color:#1565c0;">L3</div>
+                <div class="phase-grid">
+                  <div class="phase-cell"><span class="pl">Voltage</span><b class="pv" id="v3">0</b> <span class="pu">V</span></div>
+                  <div class="phase-cell"><span class="pl">Current</span><b class="pv" id="i3">0</b> <span class="pu">A</span></div>
+                  <div class="phase-cell"><span class="pl">Power</span><b class="pv" id="p3">0</b> <span class="pu">W</span></div>
+                  <div class="phase-cell"><span class="pl">Energy</span><b class="pv" id="e3">0</b> <span class="pu">kWh</span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Totals: plain row, no box -->
+            <div class="total-row">
+              <div><span class="tl">Total Current</span><b class="tv" id="iT">0</b> <span class="tu">A</span></div>
+              <div><span class="tl">Total Power</span><b class="tv" id="pT">0</b> <span class="tu">W</span></div>
+              <div><span class="tl">Total Energy</span><b class="tv" id="eT">0</b> <span class="tu">kWh</span></div>
+            </div>
+
+            <!-- Recent events (preview; full log on log.html) -->
+            <div style="margin-top:14px; border-top:1px solid #eee; padding-top:10px;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:.85rem; font-weight:600; color:#555;">Recent Events</span>
+                <a href="log.html" style="font-size:.75rem; color:#1565c0; text-decoration:none;">View all ›</a>
+              </div>
+              <div id="homeLog" style="margin-top:8px; font-size:.78rem; color:#666; max-height:360px; overflow-y:auto; border:1px solid #f0f0f0; border-radius:6px;">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============ PROTECTION ============ -->
+        <div class="other-settings-container padding-outer-2 content-div" id="menu-3" style="display:none;">
+          <style>
+            .prot-box { border:1px solid #eee; border-radius:10px; padding:10px 12px; margin-top:10px; }
+            .prot-head { display:flex; justify-content:space-between; align-items:center; }
+            .prot-live { font-size:.68rem; color:#888; margin:2px 0 8px; }
+            .prot-en { font-size:.82rem; display:block; margin:6px 0 8px; }
+            .prot-field { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:5px 0; }
+            .prot-field span { font-size:.78rem; color:#555; }
+            .prot-field input { width:100px; }
+            .prot-stat { font-size:.7rem; font-weight:700; color:#999; }
+          </style>
+          <div class="other-settings gap-flex">
+            <div class="collapsible-section i-c-c gap-flex cn pd2">
+              <div class="hc pr">
+                <h4 class="sh">Phase Protection</h4>
+                <span class="hi" tabindex="0">i</span>
+                <span class="ht">Enable protection per phase and set its limits.
+                  Low Voltage: 150–250 V. High Voltage: 200–290 V (must be above Low Voltage).
+                  Overload Current: 0.01–50 A. Saving requires your device PIN.</span>
+              </div>
+
+              <div class="prot-box" style="border-left:4px solid #c62828;">
+                <div class="prot-head"><b style="color:#c62828;">Phase L1</b><span class="prot-stat" id="protStat1">—</span></div>
+                <div class="prot-live">Live: <span id="protLiveV1">—</span> V&nbsp;/&nbsp;<span id="protLiveI1">—</span> A</div>
+                <label class="prot-en"><input type="checkbox" id="protEn1" /> Enable protection</label>
+                <div class="prot-field"><span>High Voltage (V) <small style="color:#999;">200–290</small></span><input type="number" id="protHv1" step="1" min="200" max="290" class="idB" /></div>
+                <div class="prot-field"><span>Low Voltage (V) <small style="color:#999;">150–250</small></span><input type="number" id="protLv1" step="1" min="150" max="250" class="idB" /></div>
+                <div class="prot-field"><span>Overload Current (A) <small style="color:#999;">0.01–50</small></span><input type="number" id="protHi1" step="0.01" min="0.01" max="50" class="idB" /></div>
+              </div>
+
+              <div class="prot-box" style="border-left:4px solid #f57f17;">
+                <div class="prot-head"><b style="color:#f57f17;">Phase L2</b><span class="prot-stat" id="protStat2">—</span></div>
+                <div class="prot-live">Live: <span id="protLiveV2">—</span> V&nbsp;/&nbsp;<span id="protLiveI2">—</span> A</div>
+                <label class="prot-en"><input type="checkbox" id="protEn2" /> Enable protection</label>
+                <div class="prot-field"><span>High Voltage (V) <small style="color:#999;">200–290</small></span><input type="number" id="protHv2" step="1" min="200" max="290" class="idB" /></div>
+                <div class="prot-field"><span>Low Voltage (V) <small style="color:#999;">150–250</small></span><input type="number" id="protLv2" step="1" min="150" max="250" class="idB" /></div>
+                <div class="prot-field"><span>Overload Current (A) <small style="color:#999;">0.01–50</small></span><input type="number" id="protHi2" step="0.01" min="0.01" max="50" class="idB" /></div>
+              </div>
+
+              <div class="prot-box" style="border-left:4px solid #1565c0;">
+                <div class="prot-head"><b style="color:#1565c0;">Phase L3</b><span class="prot-stat" id="protStat3">—</span></div>
+                <div class="prot-live">Live: <span id="protLiveV3">—</span> V&nbsp;/&nbsp;<span id="protLiveI3">—</span> A</div>
+                <label class="prot-en"><input type="checkbox" id="protEn3" /> Enable protection</label>
+                <div class="prot-field"><span>High Voltage (V) <small style="color:#999;">200–290</small></span><input type="number" id="protHv3" step="1" min="200" max="290" class="idB" /></div>
+                <div class="prot-field"><span>Low Voltage (V) <small style="color:#999;">150–250</small></span><input type="number" id="protLv3" step="1" min="150" max="250" class="idB" /></div>
+                <div class="prot-field"><span>Overload Current (A) <small style="color:#999;">0.01–50</small></span><input type="number" id="protHi3" step="0.01" min="0.01" max="50" class="idB" /></div>
+              </div>
+
+              <div style="margin-top:10px;"><input type="button" class="cn button" value="Save Protection" onclick="saveProtection()" /></div>
+              <p id="protMsg" class="cn" style="min-height:16px;"></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============ SETTINGS ============ -->
+        <div class="other-settings-container padding-outer-2 content-div" id="menu-2" style="display:none;">
+          <div class="other-settings gap-flex">
+
+            <!-- Device time -->
+            <div class="collapsible-section i-c-c gap-flex cn pd2">
+              <div class="hc pr"><h4 class="sh">Device Time</h4></div>
+              <p class="cn" style="margin:10px 1px 10px 20px;"><span id="rtcTime"></span></p>
+            </div>
+
+            <!-- WiFi settings + scan -->
+            <div class="wifi-settings collapsible-section i-c-c gap-flex cn pd2">
+              <div class="hc pr">
+                <h4 class="sh">WiFi Settings</h4>
+                <span class="hi" tabindex="0">i</span>
+                <span class="ht">Connect the meter to your local WiFi to access this page from your network.
+                  If WiFi is unavailable, the device falls back to its own Access Point.</span>
+              </div>
+              <div class="cn" style="margin:10px 1px 10px 5px; font-style:italic;">
+                <span id="connectionDetails"></span>
+                <span id="wiFiDetails" style="display:block; margin-top:5px;"></span>
+                <span id="macDetails" style="display:block; margin-top:5px;"></span>
+              </div>
+
+              <div>
+                <p class="p-s pb2" title="WiFi SSID">WiFi SSID</p>
+                <input type="text" id="ssid" class="idB cn" maxlength="32" />
+              </div>
+              <div style="margin-top:6px;">
+                <input type="button" class="cn button" value="Scan Networks" onclick="scanNetworks()" />
+                <div id="scanList" style="margin:6px 0; font-size:.8rem;"></div>
+              </div>
+              <div class="pc">
+                <p class="p-s pb2" title="Password">Password</p>
+                <input type="password" id="pass" class="idB" maxlength="64" />
+                <span class="view-password" onclick="viewPassword('pass')">
+                  <svg class="icon"><use href="#icon-eye"></use></svg>
+                </span>
+              </div>
+              <div style="margin-top:8px;">
+                <input type="button" id="submitWiFi" class="cn button" value="Save &amp; Connect" onclick="saveWifi()" />
+                <input type="button" id="disconnectWiFi" class="cn button" value="Disconnect WiFi"
+                       onclick="disconnectWifi()" style="margin-left:6px;" />
+              </div>
+              <p id="wifiMsg" class="cn" style="min-height:16px;"></p>
+            </div>
+
+            <!-- Device name -->
+            <div class="wifi-settings collapsible-section i-c-c gap-flex cn pd2">
+              <div class="hc pr">
+                <h4 class="sh">Device Name</h4>
+                <span class="hi" tabindex="0">i</span>
+                <span class="ht">Name the device (4–20 chars). Sets the AP name (&lt;name&gt;_AP) and
+                  the http://&lt;name&gt;.local address. Restart to fully apply.</span>
+              </div>
+              <div class="deviceName">
+                <p class="p-s pb2">Device Name</p>
+                <input type="text" id="deviceName" class="idB" maxlength="20" minlength="4" />
+              </div>
+              <div><input type="button" class="cn button" value="Save" onclick="saveName()" /></div>
+              <p id="nameMsg" class="cn" style="min-height:16px;"></p>
+            </div>
+
+            <!-- AP password -->
+            <div class="wifi-settings collapsible-section i-c-c gap-flex cn pd2">
+              <div class="hc pr">
+                <h4 class="sh">Access Point Password</h4>
+                <span class="hi" tabindex="0">i</span>
+                <span class="ht">Set a password (min 8 chars) for the device's own Access Point.
+                  Leave blank to keep the AP open.</span>
+              </div>
+              <div class="pc">
+                <p class="p-s pb2" title="AP Password">AP Password</p>
+                <input type="password" id="APPass" class="input-div" maxlength="63" />
+                <span class="view-password" onclick="viewPassword('APPass')">
+                  <svg class="icon"><use href="#icon-eye"></use></svg>
+                </span>
+              </div>
+              <div><input type="button" class="cn button" value="Save" onclick="saveApPass()" /></div>
+              <p id="apMsg" class="cn" style="min-height:16px;"></p>
+            </div>
+
+            <!-- Device PIN -->
+            <div class="wifi-settings collapsible-section i-c-c gap-flex cn pd2">
+              <div class="hc pr">
+                <h4 class="sh">Device PIN</h4>
+                <span class="hi" tabindex="0">i</span>
+                <span class="ht">4-digit PIN used to unlock this page.</span>
+              </div>
+              <div class="pc">
+                <p class="p-s pb2" title="New PIN">New PIN</p>
+                <input type="password" id="devicePin" class="input-div" maxlength="4" minlength="4" inputmode="numeric" />
+                <span class="view-password" onclick="viewPassword('devicePin')">
+                  <svg class="icon"><use href="#icon-eye"></use></svg>
+                </span>
+              </div>
+              <div><input type="button" class="cn button" value="Save" onclick="savePin()" /></div>
+              <p id="pinMsg" class="cn" style="min-height:16px;"></p>
+            </div>
+
+            <!-- EVIQtech Cloud (MQTT) -->
+            <div class="collapsible-section i-c-c gap-flex cn pd2">
+              <div class="hc pr">
+                <h4 class="sh">EVIQtech Cloud</h4>
+                <span class="hi" tabindex="0">i</span>
+                <span class="ht">Enter your email to register this device to the EVIQtech cloud over MQTT.
+                  The device must be connected to WiFi. You'll get an email with a link to activate your account,
+                  after which the device syncs its live data to the cloud.</span>
+              </div>
+              <p class="cn" id="cloudStatusText" style="font-style:italic; margin:6px 0;">—</p>
+              <div id="cloudEmailDiv">
+                <p class="p-s pb2" title="Email Address">Email Address</p>
+                <input type="email" id="clEmail" class="idB" maxlength="120" />
+                <div style="margin-top:8px;">
+                  <input type="button" class="cn button" value="Connect to Cloud" onclick="connectCloud()" />
+                </div>
+              </div>
+              <div id="cloudStatusDiv" style="display:none; margin-top:8px;">
+                <input type="button" class="cn button" value="Disconnect Cloud" onclick="disconnectCloud()" />
+              </div>
+              <p id="cloudMsg" class="cn" style="min-height:16px;"></p>
+            </div>
+
+            <!-- Firmware update -->
+            <div class="collapsible-section i-c-c gap-flex cn pd2">
+              <div class="hc pr">
+                <h4 class="sh">Firmware Update</h4>
+                <span class="hi" tabindex="0">i</span>
+                <span class="ht">Upload a new firmware .bin to update the device. Do not power off during update.</span>
+              </div>
+              <p class="cn">Current Version: <span id="firmwareVersion">v##VERSION##</span></p>
+              <form name="uploadForm" id="uploadForm" method="POST" action="/updateSystem"
+                    enctype="multipart/form-data" onsubmit="return firmwareUpdate(event)">
+                <label for="firmware" class="pb2">Firmware (.bin):</label><br />
+                <input type="file" name="firmware" id="firmware" accept=".bin" /><br /><br />
+                <input type="submit" class="cn button" value="Update Firmware" />
+              </form>
+              <p id="otaMsg" class="cn" style="min-height:16px;"></p>
+            </div>
+
+            <!-- Meter front-end (STM32) firmware update -->
+            <div class="collapsible-section i-c-c gap-flex cn pd2">
+              <div class="hc pr">
+                <h4 class="sh">STM Firmware update</h4>
+                <span class="hi" tabindex="0">i</span>
+                <span class="ht">Upload a new STM32 .bin. The front-end reboots into its bootloader and is
+                  reflashed over UART. Metering stops for the duration. Do not power off during update.</span>
+              </div>
+              <form name="stmUploadForm" id="stmUploadForm" method="POST" action="/updateSTM32"
+                    enctype="multipart/form-data" onsubmit="return stm32Update(event)">
+                <label for="stmFirmware" class="pb2">STM32 Firmware (.bin):</label><br />
+                <input type="file" name="firmware" id="stmFirmware" accept=".bin" /><br /><br />
+                <input type="submit" class="cn button" value="1. Send to Front-End" />
+              </form>
+              <div class="pd2">
+                <input type="button" class="cn button" value="2. Install &amp; Restart"
+                       onclick="stm32Apply()" />
+              </div>
+              <p id="stmOtaMsg" class="cn" style="min-height:16px;"></p>
+            </div>
+
+            <!-- Logout -->
+            <div class="collapsible-section i-c-c gap-flex cn pd2">
+              <div class="hc pr"><h4 class="sh">Session</h4></div>
+              <div><input type="button" class="cn button" value="Logout" onclick="logout()" /></div>
+            </div>
+
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+</body>
+
+</html>
