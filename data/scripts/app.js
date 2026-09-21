@@ -47,6 +47,8 @@ function applyReadings(d) {
   var t = (d.time && d.time.length) ? d.time : "—";
   $("systemTime").textContent = t;
   if ($("rtcTime")) $("rtcTime").textContent = t;
+  if ($("battV")) $("battV").textContent = n1(d.batt);
+  if ($("batteryChip")) $("batteryChip").classList.toggle("low", Number(d.batt) < 1.5);
 }
 
 function pollReadings() {
@@ -357,8 +359,14 @@ function stm32Apply() {
 }
 
 // ---------- event log ----------
+// Codes match event_log.h (MeterEvent).
 var EV_MSG = {
-  0: "Device restarted"
+  0: "Device restarted",
+  1: "R main relay", 2: "Y main relay", 3: "B main relay",
+  4: "Y-R aux relay", 5: "B-R aux relay", 6: "R-Y aux relay",
+  7: "B-Y aux relay", 8: "R-B aux relay", 9: "Y-B aux relay",
+  10: "R phase overload", 11: "Y phase overload", 12: "B phase overload",
+  13: "STM32 restarted"
 };
 // ESP8266 reset reason codes (event_log.cpp resetReasonName()).
 var RESET_MSG = {
@@ -388,6 +396,10 @@ function renderLogTable(logs, limit) {
     if (e.ev === 0) {
       var reason = RESET_MSG[e.rc] || "Unknown";
       msg += '<br><span style="color:#999;">' + reason + '</span>';
+    } else if (e.ev >= 1 && e.ev <= 9) {
+      msg += e.rc ? ' — ON' : ' — OFF';
+    } else if (e.ev >= 10 && e.ev <= 12) {
+      msg += e.rc ? ' — overload' : ' — cleared';
     }
     html += '<tr style="border-bottom:1px solid #eee;">' +
       '<td style="width:38%; padding:5px 6px; white-space:nowrap; vertical-align:top; color:#555;">' + fmtTs(e.ts) + '</td>' +
@@ -420,6 +432,6 @@ window.addEventListener("load", function () {
   setInterval(pollReadings, 1500);
   setInterval(loadWiFiStatus, 15000);
   setInterval(loadCloudStatus, 15000);
-  setInterval(loadHomeLog, 15000);
+  setInterval(loadHomeLog, 5000);
   setInterval(loadProtection, 3000);
 });

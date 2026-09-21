@@ -31,8 +31,21 @@ static bool bootPending = true;
 // ----------------------------------------------------------------------------
 static const char *evName(uint8_t ev) {
     switch (ev) {
-        case EV_BOOT: return "Device restarted";
-        default:      return "Event";
+        case EV_BOOT:         return "Device restarted";
+        case EV_R_MAIN:       return "R main relay";
+        case EV_Y_MAIN:       return "Y main relay";
+        case EV_B_MAIN:       return "B main relay";
+        case EV_YR_AUX:       return "Y-R aux relay";
+        case EV_BR_AUX:       return "B-R aux relay";
+        case EV_RY_AUX:       return "R-Y aux relay";
+        case EV_BY_AUX:       return "B-Y aux relay";
+        case EV_RB_AUX:       return "R-B aux relay";
+        case EV_YB_AUX:       return "Y-B aux relay";
+        case EV_OVERLOAD_R:   return "R phase overload";
+        case EV_OVERLOAD_Y:   return "Y phase overload";
+        case EV_OVERLOAD_B:   return "B phase overload";
+        case EV_STM_RESTART:  return "STM32 restarted";
+        default:              return "Event";
     }
 }
 
@@ -73,11 +86,11 @@ static void trimLog() {
     LittleFS.rename(LOG_TMP_PATH, LOG_PATH);
 }
 
-static void appendRec(uint8_t ev, uint8_t aux) {
+static void appendRec(uint8_t ev, uint8_t aux, uint32_t ts) {
     if (!fsReady) return;
 
     LogRec rec;
-    rec.ts = localWallEpoch();   // 0 if clock not set yet
+    rec.ts = ts;
     rec.ev = ev;
     rec.aux = aux;
 
@@ -115,7 +128,11 @@ void initEventLog() {
 }
 
 void logEvent(uint8_t ev, uint8_t aux) {
-    appendRec(ev, aux);
+    appendRec(ev, aux, localWallEpoch());   // 0 if clock not set yet
+}
+
+void logEventAt(uint8_t ev, uint8_t aux, uint32_t ts) {
+    appendRec(ev, aux, ts);
 }
 
 void serviceEventLog() {
@@ -128,7 +145,7 @@ void serviceEventLog() {
 
     if (localWallEpoch() != 0 || (millis() - firstService > 30000UL)) {
         bootPending = false;
-        appendRec(EV_BOOT, bootReason);
+        appendRec(EV_BOOT, bootReason, localWallEpoch());
     }
 }
 

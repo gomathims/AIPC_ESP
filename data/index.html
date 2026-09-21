@@ -57,9 +57,6 @@
         <!-- ============ HOME ============ -->
         <div class="home-container gap-flex content-div active" id="menu-1">
           <div id="main-switch-container" class="padding-outer" style="padding:1rem">
-            <!-- Time (top) -->
-            <div id="systemTime" style="text-align:center; font-size:.78rem; color:#777;">—</div>
-
             <!-- Per-phase cards: each phase in its own colour with its V/I/P/E -->
             <!-- .phase-cell: one parameter (label / value / unit). Grid = 2x2 per box. -->
             <!-- Three phase boxes in a row (side by side) on both desktop and mobile. -->
@@ -77,7 +74,23 @@
               .total-row .tl { font-size:.66rem; color:#888; display:block; margin-bottom:2px; }
               .total-row .tv { font-size:1.1rem; font-weight:700; color:#333; }
               .total-row .tu { font-size:.6rem; color:#999; }
+              .home-top-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+              .battery-chip { display:inline-flex; align-items:baseline; gap:3px; background:#e8f5e9;
+                              border:1px solid #c8e6c9; border-radius:8px; padding:3px 8px; white-space:nowrap; }
+              .battery-chip .bl { font-size:.62rem; font-weight:700; color:#2e7d32; }
+              .battery-chip .bv { font-size:.78rem; font-weight:700; color:#1b5e20; }
+              .battery-chip .bu { font-size:.62rem; color:#2e7d32; }
+              .battery-chip.low { background:#ffebee; border-color:#ffcdd2; }
+              .battery-chip.low .bl, .battery-chip.low .bu { color:#c62828; }
+              .battery-chip.low .bv { color:#b71c1c; }
             </style>
+
+            <div class="home-top-row">
+              <div class="battery-chip" id="batteryChip" title="Battery voltage">
+                <span class="bl">Battery Volt =</span><b class="bv" id="battV">0.0</b><span class="bu">V</span>
+              </div>
+              <div id="systemTime" style="flex:1; text-align:center; font-size:.78rem; color:#777;">—</div>
+            </div>
 
             <div class="phase-row">
               <div class="phase-box" style="background:#ffebee; border-color:#ffcdd2;">

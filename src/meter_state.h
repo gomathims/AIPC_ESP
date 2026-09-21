@@ -20,4 +20,7 @@ extern volatile float voltL3, curL3, powL3, eneL3;
 extern volatile bool meterDataValid;
 extern volatile unsigned long meterLastUpdate;
 
+// Battery voltage (Volts) reported by the STM32 front-end.
+extern float bateryVoltag;
+
 #endif // METER_STATE_H

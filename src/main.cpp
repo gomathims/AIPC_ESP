@@ -51,10 +51,29 @@ uint8_t headerTimesynced = 0XDD, timedetail[11];
 bool timesynced=false;
 
 
+typedef struct event{
+	time_t carryEventTime;
+	uint64_t carryEventFlag;
+}event;
+
+event arrEvent[20];
+uint8_t structTemp[sizeof(arrEvent[0]) + 2];
+
+uint8_t headerEventReceive = 0XEE;
+uint8_t eventWriteIndex = -1;
+
+// Last STM32 event-flag snapshot, used to diff incoming frames into individual
+// relay/overload transitions for the web event log. Bits 0-11: level state
+// (1 = ON / overload present, 0 = OFF / cleared). Bit 12: one-shot "STM32 restarted" pulse.
+static uint32_t lastStmEventFlag = 0;
+
+float bateryVoltag;
 
 
 
-static uint8_t rxDataV1[38];
+
+
+static uint8_t rxDataV1[42];
 
 // void uartCollection()
 // {
@@ -120,7 +139,7 @@ static void protectionUartSend(){
 static void timeSyncUartSend(){
 
     time_t now = time(nullptr);
-     printf("The unix format time is %llu \r\n",now);                //testing purpose
+    //  Serial.printf("The unix format time is %llu \r\n",now);                //testing purpose
     if (now > YEAR2020)                                                 // if the year is 2020 only
     { 
         /*testing purpose*/
@@ -163,10 +182,50 @@ static void timeSyncUartSend(){
 // Non-blocking UART reader: only consumes a frame once a full one is buffered,
 // so it never stalls the WiFi/cloud service loop. On a header mismatch it drops
 // a single byte to resynchronise with the stream.
+
+
+// Diffs a freshly-received STM32 event-flag snapshot against the previous one
+// and logs one web event-log entry per bit that changed. EV_R_MAIN..EV_OVERLOAD_B
+// (event_log.h) are numbered 1..12, matching bit0..bit11 of the flag 1:1.
+static void processStmEvent(const event &e) {
+    uint32_t flag = (uint32_t)e.carryEventFlag;
+    uint32_t ts = (uint32_t)e.carryEventTime;
+    uint32_t changed = flag ^ lastStmEventFlag;
+
+    for (uint8_t bit = 0; bit <= 11; bit++) {
+        if (changed & (1UL << bit)) {
+            bool active = (flag & (1UL << bit)) != 0;
+            logEventAt(EV_R_MAIN + bit, active ? 1 : 0, ts);
+        }
+    }
+    // Restart is a one-shot pulse from the STM32 (set then cleared on its side);
+    // only log the rising edge so it doesn't also produce a spurious "cleared" row.
+    if ((changed & (1UL << 12)) && (flag & (1UL << 12))) {
+        logEventAt(EV_STM_RESTART, 0, ts);
+    }
+
+    lastStmEventFlag = flag;
+}
+
 static void uartCollection() {
-    while (Serial.available() >= 42) {
+    while (Serial.available()) {
         // Peek the 4-byte marker without over-consuming on mismatch.
-        if (Serial.peek() != 'S') { Serial.read(); continue; }
+        if (Serial.peek() != 'S') { 
+            if(Serial.peek() == 0xEE){
+                Serial.readBytes(structTemp,sizeof(structTemp));
+                eventWriteIndex++;
+                if(eventWriteIndex >= 20){
+                    eventWriteIndex = 0;
+                }
+                memcpy(&arrEvent[eventWriteIndex],&structTemp[1],sizeof(arrEvent[0]));
+                processStmEvent(arrEvent[eventWriteIndex]);
+                // Serial.printf("The time of the Event is %lld and the Event is %lld\r\n",arrEvent->carryEventTime,arrEvent->carryEventFlag);
+                break;
+            }
+            
+            Serial.read();
+            continue; 
+        }
 
         char ver[4];
         Serial.readBytes(ver, 4);
@@ -190,6 +249,9 @@ static void uartCollection() {
         eneL2 = ((rxDataV1[30] << 16 | rxDataV1[31] << 8 | rxDataV1[32]) / CALIB_ENE2);
         eneL3 = ((rxDataV1[33] << 16 | rxDataV1[34] << 8 | rxDataV1[35]) / CALIB_ENE3);
         relayStatus = ((rxDataV1[37] << 8 | rxDataV1[36]));
+        memcpy(&bateryVoltag,&rxDataV1[38],sizeof(bateryVoltag));
+        // Serial.printf("The voltage is %.2f\r\n",bateryVoltag);
+
         if (curL1 <= 0.08) {
 			curL1 = 0;
 			powL1 = 0;
@@ -217,6 +279,71 @@ static void uartCollection() {
 
     
 }
+
+
+
+
+
+
+
+
+
+
+
+// static void uartCollection() {
+//     while (Serial.available() >= 42) {
+//         // Peek the 4-byte marker without over-consuming on mismatch.
+//         if (Serial.peek() != 'S') { Serial.read(); continue; }
+
+//         char ver[4];
+//         Serial.readBytes(ver, 4);
+//         ver[3] = '\0';
+//         if (strcmp(ver, "STM") != 0) {
+//             // Marker didn't line up; the 4 bytes are already consumed, resync next pass.
+//             continue;
+//         }
+
+//         Serial.readBytes(rxDataV1, sizeof(rxDataV1));
+//         voltL1 = ((rxDataV1[0] << 16 | rxDataV1[1]  << 8 | rxDataV1[2]) / CALIB_VOL1);
+//         voltL2 = ((rxDataV1[3] << 16 | rxDataV1[4]  << 8 | rxDataV1[5]) / CALIB_VOL2);
+//         voltL3 = ((rxDataV1[6] << 16 | rxDataV1[7]  << 8 | rxDataV1[8]) / CALIB_VOL3);
+//         curL1 = ((rxDataV1[9]  << 16 | rxDataV1[10] << 8 | rxDataV1[11]) / CALIB_CUR1);
+//         curL2 = ((rxDataV1[12] << 16 | rxDataV1[13] << 8 | rxDataV1[14]) / CALIB_CUR2);
+//         curL3 = ((rxDataV1[15] << 16 | rxDataV1[16] << 8 | rxDataV1[17]) / CALIB_CUR3);
+//         powL1 = ((rxDataV1[18] << 16 | rxDataV1[19] << 8 | rxDataV1[20]) / CALIB_POW1);
+//         powL2 = ((rxDataV1[21] << 16 | rxDataV1[22] << 8 | rxDataV1[23]) / CALIB_POW2);
+//         powL3 = ((rxDataV1[24] << 16 | rxDataV1[25] << 8 | rxDataV1[26]) / CALIB_POW3);
+//         eneL1 = ((rxDataV1[27] << 16 | rxDataV1[28] << 8 | rxDataV1[29]) / CALIB_ENE1);
+//         eneL2 = ((rxDataV1[30] << 16 | rxDataV1[31] << 8 | rxDataV1[32]) / CALIB_ENE2);
+//         eneL3 = ((rxDataV1[33] << 16 | rxDataV1[34] << 8 | rxDataV1[35]) / CALIB_ENE3);
+//         relayStatus = ((rxDataV1[37] << 8 | rxDataV1[36]));
+//         if (curL1 <= 0.08) {
+// 			curL1 = 0;
+// 			powL1 = 0;
+// 		}
+// 		if (curL2 <= 0.08) {
+// 			curL2 = 0;
+// 			powL2 = 0;
+// 		}
+// 		if (curL3 <= 0.08) {
+// 			curL3 = 0;
+// 			powL3 = 0;
+// 		}
+//         // Serial.printf("volt =%f\nrelay status  %x\n",voltL1,relayStatus);
+       
+//         meterDataValid = true;
+//         meterLastUpdate = millis();
+//     }
+//     // while(Serial.available() == 1){
+//     //     Serial.readBytes(&UARTcommand,1);
+//     //    if(UARTcommand==headerProtection){
+//     //     protectionDetailsSaved = true;
+//     //    }
+
+//     // }
+
+    
+// }
 
 void setup() {
     Serial.setRxBufferSize(256);   // hold >1 STM frame while WiFi is busy

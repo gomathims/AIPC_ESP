@@ -35,7 +35,15 @@
   </div>
 
   <script>
-    var EV_MSG = { 0: "Device restarted" };
+    // Codes match event_log.h (MeterEvent).
+    var EV_MSG = {
+      0: "Device restarted",
+      1: "R main relay", 2: "Y main relay", 3: "B main relay",
+      4: "Y-R aux relay", 5: "B-R aux relay", 6: "R-Y aux relay",
+      7: "B-Y aux relay", 8: "R-B aux relay", 9: "Y-B aux relay",
+      10: "R phase overload", 11: "Y phase overload", 12: "B phase overload",
+      13: "STM32 restarted"
+    };
     var RESET_MSG = {
       0: "Power on", 1: "Hardware watchdog", 2: "Exception", 3: "Software watchdog",
       4: "Software restart", 5: "Wake from deep sleep", 6: "External reset"
@@ -68,6 +76,10 @@
             if (e.ev === 0) {
               var reason = RESET_MSG[e.rc] || "Unknown";
               msg += '<br><span style="color:#999;">' + reason + '</span>';
+            } else if (e.ev >= 1 && e.ev <= 9) {
+              msg += e.rc ? ' — ON' : ' — OFF';
+            } else if (e.ev >= 10 && e.ev <= 12) {
+              msg += e.rc ? ' — overload' : ' — cleared';
             }
             html += '<tr style="border-bottom:1px solid #eee;">' +
               '<td style="width:38%; padding:6px; white-space:nowrap; vertical-align:top; color:#555;">' + fmtTs(e.ts) + '</td>' +
@@ -99,7 +111,10 @@
       if (n) { document.getElementById("switchNameText").textContent = n; document.title = "Event Log — " + n; }
     }).catch(function () {});
 
-    window.addEventListener("load", loadLogs);
+    window.addEventListener("load", function () {
+      loadLogs();
+      setInterval(loadLogs, 5000);
+    });
   </script>
 </body>
 

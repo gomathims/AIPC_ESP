@@ -223,6 +223,7 @@ static String buildReadingsJson() {
     doc["e1"] = round(eneL1 * 1000.0) / 1000.0;
     doc["e2"] = round(eneL2 * 1000.0) / 1000.0;
     doc["e3"] = round(eneL3 * 1000.0) / 1000.0;
+    doc["batt"] = round(bateryVoltag * 10.0) / 10.0;
     // doc["valid"] = (bool)meterDataValid;
     doc["time"] = getDeviceTimeString();
     doc["timeSynced"] = timeSynced;
