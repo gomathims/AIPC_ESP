@@ -35,6 +35,7 @@ static const IPAddress AP_SUBNET(255, 255, 255, 0);
 #define STA_POLL_INTERVAL_MS     500UL
 #define AP_RETRY_INTERVAL_MS   30000UL
 #define WIFI_CHECK_INTERVAL_MS 15000UL
+#define NTP_RESYNC_INTERVAL_MS 3600000UL   // re-sync NTP hourly while connected
 
 // ----------------------------------------------------------------------------
 // State
@@ -48,6 +49,7 @@ static bool timeSynced = false;
 static unsigned long staConnectStart = 0;
 static unsigned long lastStaPoll = 0;
 static unsigned long lastServiceTick = 0;
+static unsigned long lastNtpSync = 0;
 
 // OTA (web upload): reboot is deferred out of the request handler.
 static volatile bool otaRebootPending = false;
@@ -610,6 +612,7 @@ static void onStaConnected() {
     startMDNS();
     startNtpSync();
     timeSynced = true;
+    lastNtpSync = millis();
 }
 
 void initWiFiPortal() {
@@ -666,6 +669,10 @@ void serviceWiFiPortal() {
         if (WiFi.status() != WL_CONNECTED) {
             cloudLog("[WiFi] link lost -> reconnecting");
             beginSTA();
+        } else if (now - lastNtpSync >= NTP_RESYNC_INTERVAL_MS) {
+            startNtpSync();
+            lastNtpSync = now;
+            timesynced = true;
         }
     } else if (wiFiMode == 'A') {
         static unsigned long lastApRetry = 0;

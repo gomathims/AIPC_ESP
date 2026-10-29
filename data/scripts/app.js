@@ -429,9 +429,9 @@ window.addEventListener("load", function () {
   loadHomeLog();
   loadProtection();
   pollReadings();
-  setInterval(pollReadings, 1500);
-  setInterval(loadWiFiStatus, 15000);
-  setInterval(loadCloudStatus, 15000);
-  setInterval(loadHomeLog, 5000);
-  setInterval(loadProtection, 3000);
+  setInterval(pollReadings, 3000);
+  // setInterval(loadWiFiStatus, 15000);
+  // setInterval(loadCloudStatus, 15000);
+  // setInterval(loadHomeLog, 5000);
+  // setInterval(loadProtection, 3000);
 });

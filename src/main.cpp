@@ -68,6 +68,7 @@ uint8_t eventWriteIndex = -1;
 static uint32_t lastStmEventFlag = 0;
 
 float bateryVoltag;
+uint32_t temp;
 
 
 
@@ -370,6 +371,12 @@ void loop() {
     
 
     // Decode any complete metering frames from the STM front-end.
+    // if(!temp){
+    //     temp=millis();
+    // }
+    // if((millis() - temp) >500){
+    //     temp=0;
+    // }
     uartCollection();
     //Sending protection details through uart towards STM
     if(protectionDetailsSaved){
