@@ -15,6 +15,7 @@ std::map<String, const char*> stringMap = {
     {"index.html", index_html},
     {"log.html", log_html},
     {"login.html", login_html},
+    {"rawevent.html", rawevent_html},
     {"scripts/app.js", scripts_app_js},
 };
 

@@ -19,5 +19,7 @@
 void initWiFiPortal();       // bring up WiFi + HTTP server. Call once from setup().
 void serviceWiFiPortal();    // handleClient + WiFi lifecycle. Call every loop().
 bool portalWiFiConnected();  // true when connected in station mode.
+// true if a raw "Cookie:" header value carries a live login session (used by the WebSocket layer).
+bool portalCookieAuthed(const String &cookieHeader);
 
 #endif // WIFI_PORTAL_H

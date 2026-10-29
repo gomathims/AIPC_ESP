@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="css/style.css?##VERSION##" />
+  <link rel="stylesheet" href="css/style_additional.css?##VERSION##" />
+  <link rel="icon" href="favicon.ico" type="image/x-icon" />
+  <title>Raw UART Events — Meter</title>
+  <style>
+    #rawLog { margin-top:12px; font-family:monospace; font-size:.75rem; max-height:70vh; overflow-y:auto;
+              border:1px solid #ddd; border-radius:4px; background:#fafafa; text-align:left; }
+    .ev { padding:6px 8px; border-bottom:1px solid #eee; word-break:break-all; }
+    .ev .meta { color:#777; }
+    .ev .hex { color:#222; }
+    .ev .ok { color:#2e7d32; white-space:pre-wrap; }
+    .ev .err { color:#d32f2f; }
+    .ev.info { color:#1565c0; }
+  </style>
+</head>
+
+<body>
+  <div class="main-container">
+    <header class="nav-bar">
+      <a href="/" style="float:left;"><img src="images/logo.png" class="logo" onerror="this.style.display='none'" /></a>
+      <br clear="all" />
+      <hr style="margin:5px 0; border-top:1px solid #ccc;" />
+      <h2 class="wpg-heading" id="switchNameText">Meter</h2>
+    </header>
+
+    <div class="page" style="margin-top:6.5rem;">
+      <div class="padding-outer">
+        <a href="log.html" style="font-size:.8rem; color:#1565c0; text-decoration:none;">‹ Back</a>
+        <h4 class="main-heading" style="float:left;">Raw UART Events</h4>
+        <div style="float:right;">
+          <input type="button" class="cn button" id="pauseBtn" value="Pause" onclick="togglePause()" style="margin-right:6px;" />
+          <input type="button" class="cn button" value="Clear" onclick="clearView()" />
+        </div>
+        <br clear="all" />
+        <p id="wsStatus" class="cn" style="font-size:.8rem; color:#999;">Connecting…</p>
+        <div id="rawLog"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var MAX_ROWS = 300;
+    var paused = false, ws = null;
+    var box = document.getElementById("rawLog");
+
+    function esc(s) {
+      return String(s).replace(/[&<>"]/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+      });
+    }
+    function spacedHex(h) { return (h.match(/../g) || []).join(" "); }
+    function setStatus(t, c) { var s = document.getElementById("wsStatus"); s.textContent = t; s.style.color = c; }
+
+    function addRow(html, cls) {
+      var atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
+      var d = document.createElement("div");
+      d.className = "ev" + (cls ? " " + cls : "");
+      d.innerHTML = html;
+      box.appendChild(d);
+      while (box.childNodes.length > MAX_ROWS) box.removeChild(box.firstChild);
+      if (atBottom) box.scrollTop = box.scrollHeight;
+    }
+
+    function onMessage(evt) {
+      var m;
+      try { m = JSON.parse(evt.data); } catch (e) { return; }
+      if (m.info) { addRow(esc(m.info), "info"); return; }
+      if (paused) return;
+      var time = new Date().toLocaleTimeString();
+      var html = '<div class="meta">' + esc(time) + ' · ' + m.len + ' bytes</div>' +
+                 '<div class="hex">RAW: ' + esc(spacedHex(m.hex || "")) + '</div>';
+      if (m.json !== undefined) {
+        html += '<div class="ok">JSON: ' + esc(JSON.stringify(m.json, null, 2)) + '</div>';
+      } else {
+        html += '<div class="err">JSON error: ' + esc(m.err || "unknown") + '</div>';
+      }
+      addRow(html);
+    }
+
+    function connect() {
+      ws = new WebSocket("ws://" + location.hostname + ":81/");
+      ws.onopen = function () { setStatus("Connected — waiting for UART data…", "#2e7d32"); };
+      ws.onmessage = onMessage;
+      ws.onclose = function () {
+        setStatus("Disconnected — retrying…", "#d32f2f");
+        setTimeout(connect, 2000);
+      };
+    }
+
+    function togglePause() {
+      paused = !paused;
+      document.getElementById("pauseBtn").value = paused ? "Resume" : "Pause";
+    }
+    function clearView() { box.innerHTML = ""; }
+
+    fetch("/api/deviceName").then(function (r) { return r.text(); }).then(function (n) {
+      if (n) { document.getElementById("switchNameText").textContent = n; document.title = "Raw UART Events — " + n; }
+    }).catch(function () {});
+
+    window.addEventListener("load", connect);
+  </script>
+</body>
+
+</html>

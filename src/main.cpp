@@ -10,6 +10,7 @@
 #include "event_log.h"
 #include "protection.h"
 #include "time_util.h"
+#include "ws_events.h"
 
 
 // STM32 front-end frame calibration (unchanged from the original bring-up code).
@@ -212,7 +213,8 @@ static void uartCollection() {
         // Peek the 4-byte marker without over-consuming on mismatch.
         if (Serial.peek() != 'S') { 
             if(Serial.peek() == 0xEE){
-                Serial.readBytes(structTemp,sizeof(structTemp));
+                size_t n = Serial.readBytes(structTemp,sizeof(structTemp));
+                wsTapUart(structTemp, n);
                 eventWriteIndex++;
                 if(eventWriteIndex >= 20){
                     eventWriteIndex = 0;
@@ -223,19 +225,22 @@ static void uartCollection() {
                 break;
             }
             
-            Serial.read();
+            uint8_t dropped = Serial.read();
+            wsTapUart(&dropped, 1);
             continue; 
         }
 
         char ver[4];
-        Serial.readBytes(ver, 4);
+        size_t n = Serial.readBytes(ver, 4);
+        wsTapUart((const uint8_t *)ver, n);
         ver[3] = '\0';
         if (strcmp(ver, "STM") != 0) {
             // Marker didn't line up; the 4 bytes are already consumed, resync next pass.
             continue;
         }
 
-        Serial.readBytes(rxDataV1, sizeof(rxDataV1));
+        n = Serial.readBytes(rxDataV1, sizeof(rxDataV1));
+        wsTapUart(rxDataV1, n);
         voltL1 = ((rxDataV1[0] << 16 | rxDataV1[1]  << 8 | rxDataV1[2]) / CALIB_VOL1);
         voltL2 = ((rxDataV1[3] << 16 | rxDataV1[4]  << 8 | rxDataV1[5]) / CALIB_VOL2);
         voltL3 = ((rxDataV1[6] << 16 | rxDataV1[7]  << 8 | rxDataV1[8]) / CALIB_VOL3);
@@ -359,6 +364,7 @@ void setup() {
     initProtection();
     initEventLog();
     initWiFiPortal();
+    initWsEvents();
     initCloud();
     initOTA();
     confirmFirmwareValid();
@@ -382,6 +388,8 @@ void loop() {
     }
     // Non-blocking WiFi housekeeping (handleClient + reconnect/AP retry).
     serviceWiFiPortal();
+    // Stream raw UART bursts to rawevent.html over the WebSocket.
+    serviceWsEvents();
     // Cloud (MQTT) housekeeping; active only when WiFi is connected + cloud enabled.
     serviceCloud();
     // Cloud OTA: download+flash+reboot when a newer firmware was auto-assigned.

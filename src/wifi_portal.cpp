@@ -107,9 +107,7 @@ static void invalidateToken(uint32_t tok) {
     }
 }
 
-static uint32_t cookieToken() {
-    if (!server.hasHeader("Cookie")) return 0;
-    String c = server.header("Cookie");
+static uint32_t parseCookieToken(const String &c) {
     int i = c.indexOf(SESSION_COOKIE "=");
     if (i < 0) return 0;
     i += strlen(SESSION_COOKIE) + 1;
@@ -119,7 +117,16 @@ static uint32_t cookieToken() {
     return (uint32_t)strtoul(v.c_str(), nullptr, 10);
 }
 
+static uint32_t cookieToken() {
+    if (!server.hasHeader("Cookie")) return 0;
+    return parseCookieToken(server.header("Cookie"));
+}
+
 static bool isAuthed() { return tokenValid(cookieToken()); }
+
+bool portalCookieAuthed(const String &cookieHeader) {
+    return tokenValid(parseCookieToken(cookieHeader));
+}
 
 static bool requireAuth() {
     if (!isAuthed()) {
@@ -186,7 +193,7 @@ static void handleStaticRequest() {
     if (path.startsWith("/")) path = path.substring(1);
 
     // Dashboard + log require login; everything else is public so login can render.
-    if ((path == "index.html" || path == "log.html") && !isAuthed()) {
+    if ((path == "index.html" || path == "log.html" || path == "rawevent.html") && !isAuthed()) {
         path = "login.html";
     }
 
