@@ -27,7 +27,17 @@ enum MeterEvent : uint8_t {
     EV_OVERLOAD_Y = 11,   // Y phase overload
     EV_OVERLOAD_B = 12,   // B phase overload
     EV_STM_RESTART = 13,  // STM32 front-end restarted; aux unused
+    // Added later — new codes appended so records already stored in flash keep their meaning.
+    EV_UPS_MAIN = 14,     // UPS main relay
+    EV_UPS_AUX = 15,      // UPS aux relay
+    EV_OVERLOAD_INV = 16, // Inverter (UPS) overload
+    EV_OVERPOWER_INV = 17,// Inverter (UPS) excess power consumption
 };
+
+// STM32 event-flag bit -> event code. Bits 0-8 relays, 9-10 UPS relays,
+// 11-14 overloads (R, Y, B, Inverter), 15 = UPS excess power,
+// 16 = one-shot "STM32 restarted" pulse.
+#define STM_EV_RESTART_BIT 16
 
 void initEventLog();        // mount LittleFS. Call once in setup().
 void serviceEventLog();     // append the deferred boot record once the clock is set. Call from loop().

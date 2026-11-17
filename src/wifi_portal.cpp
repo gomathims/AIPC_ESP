@@ -19,6 +19,7 @@
 #include "event_log.h"
 #include "protection.h"
 #include "time_util.h"
+#include "cumulative_energy.h"
 
 // web_content.h / web_mappings.h are generated at build time by webgen.py from
 // data/. web_mappings.h DEFINES the maps (stringMap / binaryMap), so it must be
@@ -175,6 +176,19 @@ static String getDeviceTimeString() {
     return String(buf);
 }
 
+// STM32 RTC time from the metering frame. The STM RTC holds IST wall-clock (it adds
+// +19800 s when set) and mktime()s it as UTC, so curTime is already a "local epoch":
+// format it with gmtime_r(), NOT localtime_r(), or the +5:30 offset is applied twice.
+static String getStmTimeString() {
+    time_t e = curTime;
+    if (e < (time_t)TS_VALID_MIN) return String("");   // no valid frame / STM clock unset
+    struct tm t;
+    gmtime_r(&e, &t);
+    char buf[28];
+    strftime(buf, sizeof(buf), "%Y-%m-%d / %H:%M:%S", &t);   // e.g. 2026-11-16 / 14:05:09
+    return String(buf);
+}
+
 // ----------------------------------------------------------------------------
 // Static file serving (from PROGMEM maps in web_mappings.h)
 // ----------------------------------------------------------------------------
@@ -232,9 +246,20 @@ static String buildReadingsJson() {
     doc["e1"] = round(eneL1 * 1000.0) / 1000.0;
     doc["e2"] = round(eneL2 * 1000.0) / 1000.0;
     doc["e3"] = round(eneL3 * 1000.0) / 1000.0;
+    // Inverter (4th channel)
+    doc["v4"] = round(voltL4 * 10.0) / 10.0;
+    doc["i4"] = round(curL4 * 100.0) / 100.0;
+    doc["p4"] = round(powL4 * 10.0) / 10.0;
+    doc["e4"] = round(eneL4 * 1000.0) / 1000.0;
+    // Cumulative (lifetime) energy, kWh: L1, L2, L3, Inverter
+    doc["c1"] = round(cumEnergy[0] * 1000.0) / 1000.0;
+    doc["c2"] = round(cumEnergy[1] * 1000.0) / 1000.0;
+    doc["c3"] = round(cumEnergy[2] * 1000.0) / 1000.0;
+    doc["c4"] = round(cumEnergy[3] * 1000.0) / 1000.0;
     doc["batt"] = round(bateryVoltag * 10.0) / 10.0;
     // doc["valid"] = (bool)meterDataValid;
     doc["time"] = getDeviceTimeString();
+    doc["stmTime"] = getStmTimeString();
     doc["timeSynced"] = timeSynced;
 
     String out;
@@ -645,6 +670,7 @@ void serviceWiFiPortal() {
     unsigned long now = millis();
 
     if (otaRebootPending && (now - otaRebootAt > 800)) {
+        saveCumulativeEnergy();   // don't lose up to an hour of energy on a planned reboot
         delay(50);
         ESP.restart();
     }

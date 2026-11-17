@@ -59,16 +59,17 @@
           <div id="main-switch-container" class="padding-outer" style="padding:1rem">
             <!-- Per-phase cards: each phase in its own colour with its V/I/P/E -->
             <!-- .phase-cell: one parameter (label / value / unit). Grid = 2x2 per box. -->
-            <!-- Three phase boxes in a row (side by side) on both desktop and mobile. -->
+            <!-- Inverter | L1 L2 L3 — all four boxes in one row on desktop and mobile. -->
             <style>
-              .phase-row { display:flex; gap:6px; margin-top:10px; }
-              .phase-box { flex:1 1 0; min-width:0; border-radius:10px; padding:8px 4px; border:1px solid; }
-              .phase-name { font-weight:700; font-size:.82rem; margin-bottom:8px; text-align:center; }
-              .phase-grid { display:flex; flex-direction:column; gap:7px; }
-              .phase-cell { text-align:center; line-height:1.15; }
-              .phase-cell .pl { display:block; font-size:.6rem; color:#777; }
-              .phase-cell .pv { font-size:1.02rem; font-weight:700; color:#222; }
-              .phase-cell .pu { font-size:.58rem; color:#999; }
+              .phase-row { display:flex; align-items:stretch; gap:4px; margin-top:10px; }
+              .phase-box { flex:1 1 0; min-width:0; border-radius:8px; padding:6px 2px; border:1px solid; }
+              .phase-sep { flex:0 0 2px; background:#bdbdbd; border-radius:1px; margin:2px 3px; }
+              .phase-name { font-weight:700; font-size:.74rem; margin-bottom:5px; text-align:center; }
+              .phase-grid { display:flex; flex-direction:column; gap:5px; }
+              .phase-cell { text-align:center; line-height:1.1; overflow-wrap:anywhere; }
+              .phase-cell .pl { display:block; font-size:.56rem; color:#777; }
+              .phase-cell .pv { font-size:.86rem; font-weight:700; color:#222; }
+              .phase-cell .pu { font-size:.52rem; color:#999; }
               .total-row { margin-top:16px; padding-top:12px; border-top:1px solid #eee;
                            display:flex; justify-content:space-around; text-align:center; }
               .total-row .tl { font-size:.66rem; color:#888; display:block; margin-bottom:2px; }
@@ -87,12 +88,24 @@
 
             <div class="home-top-row">
               <div class="battery-chip" id="batteryChip" title="Battery voltage">
-                <span class="bl">Battery Volt =</span><b class="bv" id="battV">0.0</b><span class="bu">V</span>
+                <span class="bl">Battery =</span><b class="bv" id="battV">0.0</b><span class="bu">/ 3.3 V</span>
               </div>
               <div id="systemTime" style="flex:1; text-align:center; font-size:.78rem; color:#777;">—</div>
             </div>
 
             <div class="phase-row">
+              <div class="phase-box" style="background:#e8f5e9; border-color:#c8e6c9;">
+                <div class="phase-name" style="color:#2e7d32;">Inverter</div>
+                <div class="phase-grid">
+                  <div class="phase-cell"><span class="pl">Voltage</span><b class="pv" id="v4">0</b> <span class="pu">V</span></div>
+                  <div class="phase-cell"><span class="pl">Current</span><b class="pv" id="i4">0</b> <span class="pu">A</span></div>
+                  <div class="phase-cell"><span class="pl">Power</span><b class="pv" id="p4">0</b> <span class="pu">W</span></div>
+                  <div class="phase-cell"><span class="pl">Energy</span><b class="pv" id="e4">0</b> <span class="pu">kWh</span></div>
+                  <div class="phase-cell"><span class="pl">Cumulative</span><b class="pv" id="c4">0</b> <span class="pu">kWh</span></div>
+                </div>
+              </div>
+              <div class="phase-sep" aria-hidden="true"></div>
+
               <div class="phase-box" style="background:#ffebee; border-color:#ffcdd2;">
                 <div class="phase-name" style="color:#c62828;">L1</div>
                 <div class="phase-grid">
@@ -100,6 +113,7 @@
                   <div class="phase-cell"><span class="pl">Current</span><b class="pv" id="i1">0</b> <span class="pu">A</span></div>
                   <div class="phase-cell"><span class="pl">Power</span><b class="pv" id="p1">0</b> <span class="pu">W</span></div>
                   <div class="phase-cell"><span class="pl">Energy</span><b class="pv" id="e1">0</b> <span class="pu">kWh</span></div>
+                  <div class="phase-cell"><span class="pl">Cumulative</span><b class="pv" id="c1">0</b> <span class="pu">kWh</span></div>
                 </div>
               </div>
 
@@ -110,6 +124,7 @@
                   <div class="phase-cell"><span class="pl">Current</span><b class="pv" id="i2">0</b> <span class="pu">A</span></div>
                   <div class="phase-cell"><span class="pl">Power</span><b class="pv" id="p2">0</b> <span class="pu">W</span></div>
                   <div class="phase-cell"><span class="pl">Energy</span><b class="pv" id="e2">0</b> <span class="pu">kWh</span></div>
+                  <div class="phase-cell"><span class="pl">Cumulative</span><b class="pv" id="c2">0</b> <span class="pu">kWh</span></div>
                 </div>
               </div>
 
@@ -120,13 +135,13 @@
                   <div class="phase-cell"><span class="pl">Current</span><b class="pv" id="i3">0</b> <span class="pu">A</span></div>
                   <div class="phase-cell"><span class="pl">Power</span><b class="pv" id="p3">0</b> <span class="pu">W</span></div>
                   <div class="phase-cell"><span class="pl">Energy</span><b class="pv" id="e3">0</b> <span class="pu">kWh</span></div>
+                  <div class="phase-cell"><span class="pl">Cumulative</span><b class="pv" id="c3">0</b> <span class="pu">kWh</span></div>
                 </div>
               </div>
             </div>
 
             <!-- Totals: plain row, no box -->
             <div class="total-row">
-              <div><span class="tl">Total Current</span><b class="tv" id="iT">0</b> <span class="tu">A</span></div>
               <div><span class="tl">Total Power</span><b class="tv" id="pT">0</b> <span class="tu">W</span></div>
               <div><span class="tl">Total Energy</span><b class="tv" id="eT">0</b> <span class="tu">kWh</span></div>
             </div>
@@ -189,6 +204,16 @@
                 <div class="prot-field"><span>High Voltage (V) <small style="color:#999;">200–290</small></span><input type="number" id="protHv3" step="1" min="200" max="290" class="idB" /></div>
                 <div class="prot-field"><span>Low Voltage (V) <small style="color:#999;">150–250</small></span><input type="number" id="protLv3" step="1" min="150" max="250" class="idB" /></div>
                 <div class="prot-field"><span>Overload Current (A) <small style="color:#999;">0.01–50</small></span><input type="number" id="protHi3" step="0.01" min="0.01" max="50" class="idB" /></div>
+              </div>
+
+              <div class="prot-box" style="border-left:4px solid #2e7d32;">
+                <div class="prot-head"><b style="color:#2e7d32;">Inverter</b><span class="prot-stat" id="protStat4">—</span></div>
+                <div class="prot-live">Live: <span id="protLiveV4">—</span> V&nbsp;/&nbsp;<span id="protLiveI4">—</span> A&nbsp;/&nbsp;<span id="protLiveP4">—</span> W</div>
+                <label class="prot-en"><input type="checkbox" id="protEn4" /> Enable protection</label>
+                <div class="prot-field"><span>High Voltage (V) <small style="color:#999;">200–290</small></span><input type="number" id="protHv4" step="1" min="200" max="290" class="idB" /></div>
+                <div class="prot-field"><span>Low Voltage (V) <small style="color:#999;">150–250</small></span><input type="number" id="protLv4" step="1" min="150" max="250" class="idB" /></div>
+                <div class="prot-field"><span>Overload Current (A) <small style="color:#999;">0.01–50</small></span><input type="number" id="protHi4" step="0.01" min="0.01" max="50" class="idB" /></div>
+                <div class="prot-field"><span>Power Limit (W) <small style="color:#999;">1–10000</small></span><input type="number" id="protHp4" step="1" min="1" max="10000" class="idB" /></div>
               </div>
 
               <div style="margin-top:10px;"><input type="button" class="cn button" value="Save Protection" onclick="saveProtection()" /></div>

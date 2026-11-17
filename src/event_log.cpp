@@ -45,6 +45,10 @@ static const char *evName(uint8_t ev) {
         case EV_OVERLOAD_Y:   return "Y phase overload";
         case EV_OVERLOAD_B:   return "B phase overload";
         case EV_STM_RESTART:  return "STM32 restarted";
+        case EV_UPS_MAIN:     return "UPS main relay";
+        case EV_UPS_AUX:      return "UPS aux relay";
+        case EV_OVERLOAD_INV: return "Inverter overload";
+        case EV_OVERPOWER_INV: return "UPS excess power";
         default:              return "Event";
     }
 }

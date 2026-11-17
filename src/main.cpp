@@ -11,24 +11,30 @@
 #include "protection.h"
 #include "time_util.h"
 #include "ws_events.h"
+#include "cumulative_energy.h"
 
 
 // STM32 front-end frame calibration (unchanged from the original bring-up code).
-#define CALIB_VOL1 14324.957805
+#define CALIB_VOL1 17338.36190
 #define CALIB_CUR1 301062.271062
 #define CALIB_POW1 648.885586
 #define CALIB_ENE1 4667.50266786
 
-#define CALIB_VOL2 14374.3938844
-#define CALIB_CUR2 345157.509157
-#define CALIB_POW2 739.078751
+#define CALIB_VOL2 17324.5952
+#define CALIB_CUR2 307157.509157
+#define CALIB_POW2 649.078751
 #define CALIB_ENE2 5667.50266786
 
 
-#define CALIB_VOL3 14388.8458298
+#define CALIB_VOL3 17319.6761
 #define CALIB_CUR3 304084.249084
-#define CALIB_POW3 656.745913
+#define CALIB_POW3 646.745913
 #define CALIB_ENE3 5000.96266786
+
+#define CALIB_VOL4 17319.6761
+#define CALIB_CUR4 304084.249084
+#define CALIB_POW4 646.745913
+#define CALIB_ENE4 5000.96266786
 
 //#define CALIB_VOL 1
 //#define CALIB_CUR 1
@@ -43,10 +49,16 @@
 volatile float voltL1 = 0, curL1 = 0, powL1 = 0, eneL1 = 0;
 volatile float voltL2 = 0, curL2 = 0, powL2 = 0, eneL2 = 0;
 volatile float voltL3 = 0, curL3 = 0, powL3 = 0, eneL3 = 0;
+volatile float voltL4 = 0, curL4 = 0, powL4 = 0, eneL4 = 0;
 volatile bool meterDataValid = false;
 volatile unsigned long meterLastUpdate = 0;
 volatile uint16 relayStatus;
-uint8_t headerProtection=0XCC,protectionDetails[41],UARTcommand;
+// Protection frame to STM: [0]=0xCC, then 13 bytes per phase (L1,L2,L3,Inverter):
+// en(1) lowV(4) highV(4) highI(4); then [53..56] = UPS power limit (float W);
+// [57] = ~(sum of bytes 1..56). Total 58 bytes.
+#define PROT_POWER_OFS (1 + 13 * PROT_PHASES)
+#define PROT_FRAME_LEN (PROT_POWER_OFS + 4 + 1)
+uint8_t headerProtection=0XCC,protectionDetails[PROT_FRAME_LEN],UARTcommand;
 bool protectionDetailsSaved=true;
 uint8_t headerTimesynced = 0XDD, timedetail[11];
 bool timesynced=false;
@@ -70,73 +82,33 @@ static uint32_t lastStmEventFlag = 0;
 
 float bateryVoltag;
 uint32_t temp;
+time_t curTime;
 
 
 
 
 
-static uint8_t rxDataV1[42];
+static uint8_t rxDataV1[58];
 
-// void uartCollection()
-// {
-//   char ver[4];
-//   Serial.readBytes(ver, 4);
-//   delay(1);
-//   // printf("the verification bytes are %s\n",ver);
-//   if (strcmp(ver, "STM") == 0)
-//   {
-//     if (Serial.available() >= 36)
-//     {
-//       Serial.readBytes(rxDataV1, 36);
-//       voltL1 = ((rxDataV1[0] << 16 | rxDataV1[1] << 8 | rxDataV1[2]) / CALIB_VOL);
-//       voltL2 = ((rxDataV1[3] << 16 | rxDataV1[4] << 8 | rxDataV1[5]) / CALIB_VOL);
-//       voltL3 = ((rxDataV1[6] << 16 | rxDataV1[7] << 8 | rxDataV1[8]) / CALIB_VOL);
-//       curL1 = ((rxDataV1[9] << 16 | rxDataV1[10] << 8 | rxDataV1[11]) / CALIB_CUR);
-//       curL2 = ((rxDataV1[12] << 16 | rxDataV1[13] << 8 | rxDataV1[14]) / CALIB_CUR);
-//       curL3 = ((rxDataV1[15] << 16 | rxDataV1[16] << 8 | rxDataV1[17]) / CALIB_CUR);
-//       powL1 = ((rxDataV1[18] << 16 | rxDataV1[19] << 8 | rxDataV1[20]) / CALIB_POW);
-//       powL2 = ((rxDataV1[21] << 16 | rxDataV1[22] << 8 | rxDataV1[23]) / CALIB_POW);
-//       powL3 = ((rxDataV1[24] << 16 | rxDataV1[25] << 8 | rxDataV1[26]) / CALIB_POW);
-//       eneL1 = ((rxDataV1[27] << 16 | rxDataV1[28] << 8 | rxDataV1[29]) / CALIB_ENE);
-//       eneL2 = ((rxDataV1[30] << 16 | rxDataV1[31] << 8 | rxDataV1[32]) / CALIB_ENE);
-//       eneL3 = ((rxDataV1[33] << 16 | rxDataV1[34] << 8 | rxDataV1[35]) / CALIB_ENE);
-//       // printf("H->%d  M->%d  L->%d  H->%d  M->%d  L->%d H->%d  M->%d  L->%d H->%d  M->%d  L->%d H->%d\n", rxDataV1[0], rxDataV1[1], rxDataV1[2], rxDataV1[3], rxDataV1[4], rxDataV1[5], rxDataV1[6], rxDataV1[7], rxDataV1[8], rxDataV1[9], rxDataV1[10], rxDataV1[11], rxDataV1[12]);
-//     }
-//   }
-// }
 
 static void protectionUartSend(){
-    memcpy((&protectionDetails[0]),&headerProtection,1);
-    memcpy((&protectionDetails[1]),&prot[0].enabled,1);
-    memcpy((&protectionDetails[2]),&prot[0].lowV,4);
-    memcpy((&protectionDetails[6]),&prot[0].highV,4);
-    memcpy((&protectionDetails[10]),&prot[0].highI,4);
-    memcpy((&protectionDetails[14]),&prot[1].enabled,1);
-    memcpy((&protectionDetails[15]),&prot[1].lowV,4);
-    memcpy((&protectionDetails[19]),&prot[1].highV,4);
-    memcpy((&protectionDetails[23]),&prot[1].highI,4);
-    memcpy((&protectionDetails[27]),&prot[2].enabled,1);
-    memcpy((&protectionDetails[28]),&prot[2].lowV,4);
-    memcpy((&protectionDetails[32]),&prot[2].highV,4);
-    memcpy((&protectionDetails[36]),&prot[2].highI,4);
-    for(int i=1;i<40;i++){
-        protectionDetails[40]+=protectionDetails[i];
+    const int last = PROT_FRAME_LEN - 1;   // checksum index (57)
+    protectionDetails[0] = headerProtection;
+    for (int k = 0; k < PROT_PHASES; k++) {
+        uint8_t *p = &protectionDetails[1 + 13 * k];
+        p[0] = prot[k].enabled ? 1 : 0;
+        memcpy(&p[1], &prot[k].lowV, 4);
+        memcpy(&p[5], &prot[k].highV, 4);
+        memcpy(&p[9], &prot[k].highI, 4);
     }
-    protectionDetails[40]=(~(protectionDetails[40]&0XFF));
-    // Serial.printf("\nchecksum------------------->%x\n",protectionDetails[39]);
+    memcpy(&protectionDetails[PROT_POWER_OFS], &prot[PROT_UPS_IDX].highP, 4);   // UPS power limit
+    uint8_t sum = 0;
+    for (int i = 1; i < last; i++) sum += protectionDetails[i];
+    protectionDetails[last] = (uint8_t)~sum;
 
-        Serial.write(protectionDetails,41);
-        Serial.flush();
-        delay(50);
-     
-
-        // Serial.printf(" prot L1 %d ->%f  %f  %f   \n",prot[0].enabled,prot[0].lowV,prot[0].highV,prot[0].highI);
-        // Serial.printf(" prot L1 %d ->%f  %f  %f   \n",prot[1].enabled,prot[1].lowV,prot[1].highV,prot[1].highI);
-        // Serial.printf(" prot L1 %d ->%f  %f  %f   \n",prot[2].enabled,prot[2].lowV,prot[2].highV,prot[2].highI);
-
-
-    protectionDetails[40] = 0;
-
+    Serial.write(protectionDetails, PROT_FRAME_LEN);
+    Serial.flush();
+    delay(50);
 }
 static void timeSyncUartSend(){
 
@@ -153,7 +125,7 @@ static void timeSyncUartSend(){
 
 
 
-        timedetail[10] = 0;
+        timedetail[9] = 0;
         memcpy(&(timedetail[0]), &(headerTimesynced), 1);
         memcpy(&(timedetail[1]), &now, sizeof(now));
         for (int i = 1; i < 9; i++)
@@ -181,28 +153,41 @@ static void timeSyncUartSend(){
 
 
 
-// Non-blocking UART reader: only consumes a frame once a full one is buffered,
-// so it never stalls the WiFi/cloud service loop. On a header mismatch it drops
-// a single byte to resynchronise with the stream.
 
 
-// Diffs a freshly-received STM32 event-flag snapshot against the previous one
-// and logs one web event-log entry per bit that changed. EV_R_MAIN..EV_OVERLOAD_B
-// (event_log.h) are numbered 1..12, matching bit0..bit11 of the flag 1:1.
+static const uint8_t STM_BIT_TO_EV[] = {
+    EV_R_MAIN,       // bit 0
+    EV_Y_MAIN,       // bit 1
+    EV_B_MAIN,       // bit 2
+    EV_YR_AUX,       // bit 3
+    EV_BR_AUX,       // bit 4
+    EV_RY_AUX,       // bit 5
+    EV_BY_AUX,       // bit 6
+    EV_RB_AUX,       // bit 7
+    EV_YB_AUX,       // bit 8
+    EV_UPS_MAIN,     // bit 9
+    EV_UPS_AUX,      // bit 10
+    EV_OVERLOAD_R,   // bit 11
+    EV_OVERLOAD_Y,   // bit 12
+    EV_OVERLOAD_B,   // bit 13
+    EV_OVERLOAD_INV, // bit 14
+    EV_OVERPOWER_INV,// bit 15  UPS excess power consumption
+};                   // bit 16 = STM restart (STM_EV_RESTART_BIT), handled below
+
 static void processStmEvent(const event &e) {
     uint32_t flag = (uint32_t)e.carryEventFlag;
     uint32_t ts = (uint32_t)e.carryEventTime;
     uint32_t changed = flag ^ lastStmEventFlag;
 
-    for (uint8_t bit = 0; bit <= 11; bit++) {
+    for (uint8_t bit = 0; bit < sizeof(STM_BIT_TO_EV); bit++) {
         if (changed & (1UL << bit)) {
             bool active = (flag & (1UL << bit)) != 0;
-            logEventAt(EV_R_MAIN + bit, active ? 1 : 0, ts);
+            logEventAt(STM_BIT_TO_EV[bit], active ? 1 : 0, ts);
         }
     }
     // Restart is a one-shot pulse from the STM32 (set then cleared on its side);
     // only log the rising edge so it doesn't also produce a spurious "cleared" row.
-    if ((changed & (1UL << 12)) && (flag & (1UL << 12))) {
+    if ((changed & (1UL << STM_EV_RESTART_BIT)) && (flag & (1UL << STM_EV_RESTART_BIT))) {
         logEventAt(EV_STM_RESTART, 0, ts);
     }
 
@@ -245,35 +230,68 @@ static void uartCollection() {
         voltL1 = ((rxDataV1[0] << 16 | rxDataV1[1]  << 8 | rxDataV1[2]) / CALIB_VOL1);
         voltL2 = ((rxDataV1[3] << 16 | rxDataV1[4]  << 8 | rxDataV1[5]) / CALIB_VOL2);
         voltL3 = ((rxDataV1[6] << 16 | rxDataV1[7]  << 8 | rxDataV1[8]) / CALIB_VOL3);
-        curL1 = ((rxDataV1[9]  << 16 | rxDataV1[10] << 8 | rxDataV1[11]) / CALIB_CUR1);
-        curL2 = ((rxDataV1[12] << 16 | rxDataV1[13] << 8 | rxDataV1[14]) / CALIB_CUR2);
-        curL3 = ((rxDataV1[15] << 16 | rxDataV1[16] << 8 | rxDataV1[17]) / CALIB_CUR3);
-        powL1 = ((rxDataV1[18] << 16 | rxDataV1[19] << 8 | rxDataV1[20]) / CALIB_POW1);
-        powL2 = ((rxDataV1[21] << 16 | rxDataV1[22] << 8 | rxDataV1[23]) / CALIB_POW2);
-        powL3 = ((rxDataV1[24] << 16 | rxDataV1[25] << 8 | rxDataV1[26]) / CALIB_POW3);
-        eneL1 = ((rxDataV1[27] << 16 | rxDataV1[28] << 8 | rxDataV1[29]) / CALIB_ENE1);
-        eneL2 = ((rxDataV1[30] << 16 | rxDataV1[31] << 8 | rxDataV1[32]) / CALIB_ENE2);
-        eneL3 = ((rxDataV1[33] << 16 | rxDataV1[34] << 8 | rxDataV1[35]) / CALIB_ENE3);
-        relayStatus = ((rxDataV1[37] << 8 | rxDataV1[36]));
-        memcpy(&bateryVoltag,&rxDataV1[38],sizeof(bateryVoltag));
+        voltL4 = ((rxDataV1[9] << 16 | rxDataV1[10] << 8 | rxDataV1[11]) / CALIB_VOL4);
+        curL1 = ((rxDataV1[12] << 16 | rxDataV1[13] << 8 | rxDataV1[14]) / CALIB_CUR1);
+        curL2 = ((rxDataV1[15] << 16 | rxDataV1[16] << 8 | rxDataV1[17]) / CALIB_CUR2);
+        curL3 = ((rxDataV1[18] << 16 | rxDataV1[19] << 8 | rxDataV1[20]) / CALIB_CUR3);
+        curL4 = ((rxDataV1[21] << 16 | rxDataV1[22] << 8 | rxDataV1[23]) / CALIB_CUR4);
+        powL1 = ((rxDataV1[24] << 16 | rxDataV1[25] << 8 | rxDataV1[26]) / CALIB_POW1);
+        powL2 = ((rxDataV1[27] << 16 | rxDataV1[28] << 8 | rxDataV1[29]) / CALIB_POW2);
+        powL3 = ((rxDataV1[30] << 16 | rxDataV1[31] << 8 | rxDataV1[32]) / CALIB_POW3);
+        powL4 = ((rxDataV1[33] << 16 | rxDataV1[34] << 8 | rxDataV1[35]) / CALIB_POW4);
+        eneL1 = ((rxDataV1[36] << 16 | rxDataV1[37] << 8 | rxDataV1[38]) / CALIB_ENE1);
+        eneL2 = ((rxDataV1[39] << 16 | rxDataV1[40] << 8 | rxDataV1[41]) / CALIB_ENE2);
+        eneL3 = ((rxDataV1[42] << 16 | rxDataV1[43] << 8 | rxDataV1[44]) / CALIB_ENE3);
+        eneL4 = ((rxDataV1[45] << 16 | rxDataV1[46] << 8 | rxDataV1[47]) / CALIB_ENE4);
+        relayStatus = ((rxDataV1[49] << 8 | rxDataV1[48]));
+        memcpy(&bateryVoltag,&rxDataV1[50],sizeof(bateryVoltag));
+        // STM RTC epoch is 4 bytes at [42..45]. time_t is 8 bytes on the ESP8266 core,
+        // so copy into a uint32_t first (copying sizeof(time_t) would read past the buffer).
+        uint32_t stmEpoch;
+        memcpy(&stmEpoch, &rxDataV1[54], sizeof(stmEpoch));
+        curTime = (time_t)stmEpoch;
+
         // Serial.printf("The voltage is %.2f\r\n",bateryVoltag);
 
-        if (curL1 <= 0.08) {
+    if (voltL1 <= 1) {
+			voltL1 = 0;
+		}
+
+		if (voltL2 <= 1) {
+			voltL2 = 0;
+		}
+
+		if (voltL3 <= 1) {
+			voltL3 = 0;
+		}
+		
+		if (voltL4 <= 1
+        
+        ) {
+			voltL4 = 0;
+		}
+
+		if (curL1 < 0.03) {
 			curL1 = 0;
 			powL1 = 0;
 		}
-		if (curL2 <= 0.08) {
+		if (curL2 < 0.03) {
 			curL2 = 0;
 			powL2 = 0;
 		}
-		if (curL3 <= 0.08) {
+		if (curL3 < 0.03) {
 			curL3 = 0;
 			powL3 = 0;
+		}
+		if(curL4 < 0.03){
+			curL4 = 0;
+			powL4 = 0;
 		}
         // Serial.printf("volt =%f\nrelay status  %x\n",voltL1,relayStatus);
        
         meterDataValid = true;
         meterLastUpdate = millis();
+        updateCumulativeEnergy();   // accumulate L1-L4 energy; saved to flash hourly
     }
     // while(Serial.available() == 1){
     //     Serial.readBytes(&UARTcommand,1);
@@ -356,13 +374,14 @@ void setup() {
     Serial.begin(115200);
     Serial.flush();
     Serial.setTimeout(50);
-    Serial.println("setup started");
+    // Serial.println("setup started");
     delay(100);
 
 
     // WiFi web portal (AP + station in parallel), cloud, OTA, event log.
     initPreferences();
     initProtection();
+    initCumulativeEnergy();
     initEventLog();
     initWiFiPortal();
     initWsEvents();

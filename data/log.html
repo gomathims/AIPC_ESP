@@ -43,7 +43,9 @@
       4: "Y-R aux relay", 5: "B-R aux relay", 6: "R-Y aux relay",
       7: "B-Y aux relay", 8: "R-B aux relay", 9: "Y-B aux relay",
       10: "R phase overload", 11: "Y phase overload", 12: "B phase overload",
-      13: "STM32 restarted"
+      13: "STM32 restarted",
+      14: "UPS main relay", 15: "UPS aux relay", 16: "Inverter overload",
+      17: "UPS excess power"
     };
     var RESET_MSG = {
       0: "Power on", 1: "Hardware watchdog", 2: "Exception", 3: "Software watchdog",
@@ -77,10 +79,12 @@
             if (e.ev === 0) {
               var reason = RESET_MSG[e.rc] || "Unknown";
               msg += '<br><span style="color:#999;">' + reason + '</span>';
-            } else if (e.ev >= 1 && e.ev <= 9) {
+            } else if ((e.ev >= 1 && e.ev <= 9) || e.ev === 14 || e.ev === 15) {
               msg += e.rc ? ' — ON' : ' — OFF';
-            } else if (e.ev >= 10 && e.ev <= 12) {
+            } else if ((e.ev >= 10 && e.ev <= 12) || e.ev === 16) {
               msg += e.rc ? ' — overload' : ' — cleared';
+            } else if (e.ev === 17) {
+              msg += e.rc ? ' — limit exceeded' : ' — cleared';
             }
             html += '<tr style="border-bottom:1px solid #eee;">' +
               '<td style="width:38%; padding:6px; white-space:nowrap; vertical-align:top; color:#555;">' + fmtTs(e.ts) + '</td>' +

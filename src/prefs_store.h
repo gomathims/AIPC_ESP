@@ -8,7 +8,7 @@
 // Minimal drop-in replacement for the ESP32 "Preferences" (NVS) API, backed by
 // LittleFS on the ESP8266 (which has no NVS). Each namespace is a small JSON
 // file "/nvs_<ns>.json". Only the handful of methods the ported code needs are
-// implemented: begin/end, getString/putString, getBool/putBool, remove.
+// implemented: begin/end, getString/putString, getBool/putBool, getFloat/putFloat, remove.
 //
 // Writes are committed immediately (put* rewrites the file), matching how the
 // original code used NVS. Not designed for high-frequency writes.
@@ -37,6 +37,16 @@ class Preferences {
     bool getBool(const char *key, bool def = false) {
         if (_doc[key].is<bool>()) return _doc[key].as<bool>();
         return def;
+    }
+
+    float getFloat(const char *key, float def = 0.0f) {
+        if (_doc[key].is<float>()) return _doc[key].as<float>();
+        return def;
+    }
+
+    void putFloat(const char *key, float val) {
+        _doc[key] = val;
+        flush();
     }
 
     void putString(const char *key, const String &val) {

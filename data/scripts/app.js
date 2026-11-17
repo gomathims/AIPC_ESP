@@ -38,13 +38,22 @@ function applyReadings(d) {
   $("i1").textContent = n2(d.i1); $("i2").textContent = n2(d.i2); $("i3").textContent = n2(d.i3);
   $("p1").textContent = n1(d.p1); $("p2").textContent = n1(d.p2); $("p3").textContent = n1(d.p3);
   $("e1").textContent = n3(d.e1); $("e2").textContent = n3(d.e2); $("e3").textContent = n3(d.e3);
+  // Cumulative (lifetime, flash-backed) energy per phase.
+  $("c1").textContent = n3(d.c1); $("c2").textContent = n3(d.c2); $("c3").textContent = n3(d.c3);
 
-  // Totals (current summed, power summed, energy summed).
-  $("iT").textContent = n2(Number(d.i1) + Number(d.i2) + Number(d.i3));
+  // Inverter (4th channel). Not included in the totals below.
+  if ($("v4")) {
+    $("v4").textContent = n1(d.v4); $("i4").textContent = n2(d.i4);
+    $("p4").textContent = n1(d.p4); $("e4").textContent = n3(d.e4);
+    $("c4").textContent = n3(d.c4);
+  }
+
+  // Totals: power summed live; Total Energy = sum of the phases' cumulative energy.
   $("pT").textContent = n1(Number(d.p1) + Number(d.p2) + Number(d.p3));
-  $("eT").textContent = n3(Number(d.e1) + Number(d.e2) + Number(d.e3));
+  $("eT").textContent = n3(Number(d.c1) + Number(d.c2) + Number(d.c3));
 
-  var t = (d.time && d.time.length) ? d.time : "—";
+  var t = (d.stmTime && d.stmTime.length) ? d.stmTime : "—";
+  // Home tab and Settings > Device Time both show the STM32 RTC time.
   $("systemTime").textContent = t;
   if ($("rtcTime")) $("rtcTime").textContent = t;
   if ($("battV")) $("battV").textContent = n1(d.batt);
@@ -211,10 +220,12 @@ function fillProt(i, p) {
   $("protHv" + i).value = p.hv;
   $("protLv" + i).value = p.lv;
   $("protHi" + i).value = p.hi;
+  if ($("protHp" + i) && p.hp !== undefined) $("protHp" + i).value = p.hp;   // UPS only
 }
 function updProtStatus(i, p) {
   $("protLiveV" + i).textContent = Number(p.v).toFixed(1);
   $("protLiveI" + i).textContent = Number(p.i).toFixed(2);
+  if ($("protLiveP" + i) && p.p !== undefined) $("protLiveP" + i).textContent = Number(p.p).toFixed(1);
   var s = $("protStat" + i);
   s.textContent = p.status;
   s.style.color = (p.status === "OK") ? "#1b7a4b"
@@ -227,6 +238,7 @@ function loadProtection() {
       var ph = res.phases || [];
       for (var k = 0; k < ph.length; k++) {
         var i = k + 1;
+        if (!$("protEn" + i)) continue;   // no box for this phase on the page
         if (!protLoaded) fillProt(i, ph[k]);   // don't clobber edits after first load
         updProtStatus(i, ph[k]);
       }
@@ -253,17 +265,19 @@ function showToast(text, ok) {
 
 function saveProtection() {
   var phases = [];
-  for (var i = 1; i <= 3; i++) {
-    phases.push({
+  for (var i = 1; i <= 4; i++) {   // L1, L2, L3, Inverter
+    var ph = {
       en: $("protEn" + i).checked,
       hv: parseFloat($("protHv" + i).value),
       lv: parseFloat($("protLv" + i).value),
       hi: parseFloat($("protHi" + i).value)
-    });
+    };
+    if (i === 4) ph.hp = parseFloat($("protHp4").value);   // UPS power limit
+    phases.push(ph);
   }
   // Validate only the phases the user enabled. Any failure warns via toast (5 s) and stops.
-  for (var j = 0; j < 3; j++) {
-    var p = phases[j], L = "L" + (j + 1);
+  for (var j = 0; j < phases.length; j++) {
+    var p = phases[j], L = (j === 3) ? "Inverter" : "L" + (j + 1);
     if (!p.en) continue;
     if (isNaN(p.hv) || isNaN(p.lv) || isNaN(p.hi)) {
       showToast(L + ": please fill High Voltage, Low Voltage and Overload Current.", false); return;
@@ -279,6 +293,9 @@ function saveProtection() {
     }
     if (p.hi < 0.01 || p.hi > 50) {
       showToast(L + ": Overload Current must be between 0.01 and 50 A.", false); return;
+    }
+    if (j === 3 && (isNaN(p.hp) || p.hp < 1 || p.hp > 10000)) {
+      showToast(L + ": Power Limit must be between 1 and 10000 W.", false); return;
     }
   }
 
@@ -366,7 +383,9 @@ var EV_MSG = {
   4: "Y-R aux relay", 5: "B-R aux relay", 6: "R-Y aux relay",
   7: "B-Y aux relay", 8: "R-B aux relay", 9: "Y-B aux relay",
   10: "R phase overload", 11: "Y phase overload", 12: "B phase overload",
-  13: "STM32 restarted"
+  13: "STM32 restarted",
+  14: "UPS main relay", 15: "UPS aux relay", 16: "Inverter overload",
+  17: "UPS excess power"
 };
 // ESP8266 reset reason codes (event_log.cpp resetReasonName()).
 var RESET_MSG = {
@@ -396,10 +415,12 @@ function renderLogTable(logs, limit) {
     if (e.ev === 0) {
       var reason = RESET_MSG[e.rc] || "Unknown";
       msg += '<br><span style="color:#999;">' + reason + '</span>';
-    } else if (e.ev >= 1 && e.ev <= 9) {
+    } else if ((e.ev >= 1 && e.ev <= 9) || e.ev === 14 || e.ev === 15) {
       msg += e.rc ? ' — ON' : ' — OFF';
-    } else if (e.ev >= 10 && e.ev <= 12) {
+    } else if ((e.ev >= 10 && e.ev <= 12) || e.ev === 16) {
       msg += e.rc ? ' — overload' : ' — cleared';
+    } else if (e.ev === 17) {
+      msg += e.rc ? ' — limit exceeded' : ' — cleared';
     }
     html += '<tr style="border-bottom:1px solid #eee;">' +
       '<td style="width:38%; padding:5px 6px; white-space:nowrap; vertical-align:top; color:#555;">' + fmtTs(e.ts) + '</td>' +
@@ -429,7 +450,7 @@ window.addEventListener("load", function () {
   loadHomeLog();
   loadProtection();
   pollReadings();
-  setInterval(pollReadings, 3000);
+  setInterval(pollReadings, 1000);
   // setInterval(loadWiFiStatus, 15000);
   // setInterval(loadCloudStatus, 15000);
   // setInterval(loadHomeLog, 5000);

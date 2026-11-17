@@ -21,9 +21,17 @@ struct PhaseProtection {
     float highV;   // Volts
     float lowV;    // Volts
     float highI;   // Amps (overload)
+    float highP;   // Watts (power limit) - used only for the UPS/Inverter (index 3)
 };
 
-extern PhaseProtection prot[3];
+#define PROT_UPS_IDX        3
+#define PROT_POWER_DEFAULT  3000.0f   // matches STM DEFAULT_POWER_LIMIT
+#define PROT_POWER_MIN      1.0f
+#define PROT_POWER_MAX      10000.0f
+
+// 0..2 = L1/L2/L3, 3 = Inverter (4th BL0939 channel).
+#define PROT_PHASES 4
+extern PhaseProtection prot[PROT_PHASES];
 extern bool protectionDetailsSaved;
 
 

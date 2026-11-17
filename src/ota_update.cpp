@@ -5,6 +5,7 @@
 #include <ESP8266HTTPClient.h>
 #include <Updater.h>
 
+#include "cumulative_energy.h"   // saveCumulativeEnergy() before reboot
 #include "cloud_mqtt.h"          // cloudPublish / cloudAccessToken / cloudIsConnected / cloudLogf
 
 #ifndef THINGSBOARD_SERVER_URL
@@ -311,6 +312,7 @@ bool performOTAUpdate() {
         publishOTAAttributes();
         publishOTAProgress();
         cloudLogf("[OTA] update to v%s OK (%d bytes) -> rebooting", targetFirmware.version, totalWritten);
+        saveCumulativeEnergy();   // don't lose up to an hour of energy on a planned reboot
         delay(1000);
         ESP.restart();
         return true;  // not reached

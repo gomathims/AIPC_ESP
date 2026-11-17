@@ -11,6 +11,7 @@
 #include "prefs_store.h"             // LittleFS-backed Preferences shim
 #include "preference_management.h"   // deviceName
 #include "meter_state.h"
+#include "cumulative_energy.h"
 #include "wifi_portal.h"             // portalWiFiConnected()
 #include "letsencrypt_ca.h"          // LETSENCRYPT_ISRG_ROOT_X1
 #include "ota_update.h"              // processOTASharedAttributes / handleStartOTARpc
@@ -244,6 +245,16 @@ static void fillTelemetry(JsonObject v) {
     v["e1"] = round(eneL1 * 1000.0) / 1000.0;
     v["e2"] = round(eneL2 * 1000.0) / 1000.0;
     v["e3"] = round(eneL3 * 1000.0) / 1000.0;
+    // Inverter (4th BL0939 channel)
+    v["v4"] = round(voltL4 * 10.0) / 10.0;
+    v["i4"] = round(curL4 * 100.0) / 100.0;
+    v["p4"] = round(powL4 * 10.0) / 10.0;
+    v["e4"] = round(eneL4 * 1000.0) / 1000.0;
+    // Cumulative (lifetime) energy, kWh
+    v["c1"] = round(cumEnergy[0] * 1000.0) / 1000.0;
+    v["c2"] = round(cumEnergy[1] * 1000.0) / 1000.0;
+    v["c3"] = round(cumEnergy[2] * 1000.0) / 1000.0;
+    v["c4"] = round(cumEnergy[3] * 1000.0) / 1000.0;
 }
 
 static void publishTelemetry() {
