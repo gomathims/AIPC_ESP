@@ -264,6 +264,7 @@ String portalReadingsJson() {
     doc["time"] = getDeviceTimeString();
     doc["stmTime"] = getStmTimeString();
     doc["timeSynced"] = timeSynced;
+    doc["relayStatus"] = relayStatus;
 
     String out;
     serializeJson(doc, out);

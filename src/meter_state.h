@@ -18,6 +18,7 @@ extern volatile float voltL2, curL2, powL2, eneL2;
 extern volatile float voltL3, curL3, powL3, eneL3;
 // 4th BL0939 channel: the inverter (shown as "Inverter" on the home page).
 extern volatile float voltL4, curL4, powL4, eneL4;
+extern volatile uint16 relayStatus;
 
 // True once at least one valid STM frame has been decoded; millis() of the last.
 extern volatile bool meterDataValid;

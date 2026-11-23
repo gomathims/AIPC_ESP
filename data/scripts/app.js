@@ -59,82 +59,36 @@ function applyReadings(d) {
   if ($("battV")) $("battV").textContent = n1(d.batt);
   if ($("batteryChip")) $("batteryChip").classList.toggle("low", Number(d.batt) < 1.5);
 
-  updateOutputVoltage(d);
-
-  // Contactor feedback: d.cf bit0 = CF1 ... bit6 = CF7 (1 = ON).
-  var cf = Number(d.cf) || 0;
-  for (var k = 0; k < 7; k++) {
-    var chip = $("cf" + (k + 1));
-    if (!chip) continue;
-    var on = (cf >> k) & 1;
-    chip.classList.toggle("on", !!on);
-    chip.querySelector(".cs").textContent = on ? "ON" : "OFF";
+  // Power-flow arrows. relayStatus bit -> arrows it shows. Arrow id flSO: source S
+  // (0=L1 1=L2 2=L3 3=UPS) feeds output O (0=R 1=Y 2=B). Aux relay xyAux = output x fed from line y.
+  var FLOWS = [
+    ["fl00"],                  // 0  rMain  : L1 -> R
+    ["fl11"],                  // 1  yMain  : L2 -> Y
+    ["fl22"],                  // 2  bMain  : L3 -> B
+    ["fl10"],                  // 3  ryAux  : L2 -> R
+    ["fl01"],                  // 4  yrAux  : L1 -> Y
+    ["fl21"],                  // 5  ybAux  : L3 -> Y
+    ["fl12"],                  // 6  byAux  : L2 -> B
+    ["fl20"],                  // 7  rbAux  : L3 -> R
+    ["fl02"],                  // 8  brAux  : L1 -> B
+    ["fl30", "fl31", "fl32"]   // 9  upsMain: UPS -> R, Y, B
+  ];
+  var rs = Number(d.relayStatus) || 0;
+  for (var b = 0; b < FLOWS.length; b++) {
+    for (var k = 0; k < FLOWS[b].length; k++) {
+      var el = $(FLOWS[b][k]);
+      if (el) el.classList.toggle("off", !((rs >> b) & 1));
+    }
   }
+  if ($("upsAuxBadge")) $("upsAuxBadge").classList.toggle("off", !((rs >> 10) & 1));   // 10 upsAux
 }
 
-// ---------- live data over WebSocket (port 81) ----------
-// Every value on the page is pushed by the device (src/ws_events.cpp); nothing is polled.
-var LIVE_STALE_MS = 8000;   // device pushes readings at least every 2 s
-var live = { ws: null, retry: 1000, lastMsg: 0, timer: null };
-
-function sessionId() {
-  var m = document.cookie.match(/(?:^|;\s*)eviqsid=(\d+)/);
-  return m ? m[1] : "";
+function pollReadings() {
+  fetch("/api/getReadings").then(guard)
+    .then(function (r) { return r.json(); })
+    .then(applyReadings)
+    .catch(function () {});
 }
-
-function scheduleLive() {
-  if (live.timer) return;
-  live.timer = setTimeout(function () { live.timer = null; connectLive(); }, live.retry);
-  live.retry = Math.min(live.retry * 2, 10000);
-}
-
-function dropLive() {
-  var ws = live.ws;
-  live.ws = null;
-  if (ws) {
-    ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
-    try { ws.close(); } catch (e) {}
-  }
-  scheduleLive();
-}
-
-function connectLive() {
-  if (!sessionId()) { window.location.href = "/"; return; }
-  var ws;
-  try { ws = new WebSocket("ws://" + location.hostname + ":81/live?sid=" + sessionId()); }
-  catch (e) { scheduleLive(); return; }
-  live.ws = ws;
-  ws.onopen = function () { live.retry = 1000; live.lastMsg = Date.now(); };
-  ws.onmessage = function (e) {
-    live.lastMsg = Date.now();
-    var m;
-    try { m = JSON.parse(e.data); } catch (x) { return; }
-    onLiveMessage(m);
-  };
-  ws.onclose = function () { if (live.ws === ws) dropLive(); };
-  ws.onerror = function () { if (live.ws === ws) dropLive(); };
-}
-
-function onLiveMessage(m) {
-  switch (m.type) {
-    case "readings": applyReadings(m); break;
-    case "wifi":     applyWiFiStatus(m); break;
-    case "cloud":    applyCloudStatus(m); break;
-    case "prot":     applyProtection(m); break;
-    case "logs":     homeLogs = m.logs || []; renderHomeLog(); break;
-    case "log":
-      homeLogs.unshift({ ts: m.ts, ev: m.ev, rc: m.rc });
-      if (homeLogs.length > 150) homeLogs.length = 150;
-      renderHomeLog();
-      break;
-    case "auth":     window.location.href = "/"; break;   // session expired / logged out
-  }
-}
-
-// A silently dead link (WiFi drop) never fires onclose quickly: detect staleness ourselves.
-setInterval(function () {
-  if (live.ws && live.ws.readyState === 1 && Date.now() - live.lastMsg > LIVE_STALE_MS) dropLive();
-}, 2000);
 
 // ---------- wifi status / header ----------
 function setWifiIcon(mode, rssi) {
