@@ -9,6 +9,7 @@ extern "C" {
 
 #include "time_util.h"
 #include "cloud_mqtt.h"   // cloudLogf() / cloudPublishEvent() — mirror to ThingsBoard
+#include "ws_events.h"    // wsPushLogRecord() — live log on the web pages
 
 #define LOG_PATH      "/events.bin"
 #define LOG_TMP_PATH  "/events.tmp"
@@ -116,6 +117,7 @@ static void appendRec(uint8_t ev, uint8_t aux, uint32_t ts) {
             cloudLogf("[BOOT] device restarted (%s)", resetReasonName(aux));
         }
         cloudPublishEvent(ev, evName(ev));
+        wsPushLogRecord(ts, ev, aux);   // live log on the web pages
     }
 }
 

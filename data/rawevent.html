@@ -84,9 +84,14 @@
     }
 
     function connect() {
-      ws = new WebSocket("ws://" + location.hostname + ":81/");
+      var sid = (document.cookie.match(/(?:^|;\s*)eviqsid=(\d+)/) || [])[1] || "";
+      if (!sid) { window.location.href = "/"; return; }
+      ws = new WebSocket("ws://" + location.hostname + ":81/raw?sid=" + sid);
       ws.onopen = function () { setStatus("Connected — waiting for UART data…", "#2e7d32"); };
-      ws.onmessage = onMessage;
+      ws.onmessage = function (e) {
+        if (e.data.indexOf('"type":"auth"') >= 0) { window.location.href = "/"; return; }
+        onMessage(e);
+      };
       ws.onclose = function () {
         setStatus("Disconnected — retrying…", "#d32f2f");
         setTimeout(connect, 2000);

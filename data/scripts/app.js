@@ -72,12 +72,69 @@ function applyReadings(d) {
   }
 }
 
-function pollReadings() {
-  fetch("/api/getReadings").then(guard)
-    .then(function (r) { return r.json(); })
-    .then(applyReadings)
-    .catch(function () {});
+// ---------- live data over WebSocket (port 81) ----------
+// Every value on the page is pushed by the device (src/ws_events.cpp); nothing is polled.
+var LIVE_STALE_MS = 8000;   // device pushes readings at least every 2 s
+var live = { ws: null, retry: 1000, lastMsg: 0, timer: null };
+
+function sessionId() {
+  var m = document.cookie.match(/(?:^|;\s*)eviqsid=(\d+)/);
+  return m ? m[1] : "";
 }
+
+function scheduleLive() {
+  if (live.timer) return;
+  live.timer = setTimeout(function () { live.timer = null; connectLive(); }, live.retry);
+  live.retry = Math.min(live.retry * 2, 10000);
+}
+
+function dropLive() {
+  var ws = live.ws;
+  live.ws = null;
+  if (ws) {
+    ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+    try { ws.close(); } catch (e) {}
+  }
+  scheduleLive();
+}
+
+function connectLive() {
+  if (!sessionId()) { window.location.href = "/"; return; }
+  var ws;
+  try { ws = new WebSocket("ws://" + location.hostname + ":81/live?sid=" + sessionId()); }
+  catch (e) { scheduleLive(); return; }
+  live.ws = ws;
+  ws.onopen = function () { live.retry = 1000; live.lastMsg = Date.now(); };
+  ws.onmessage = function (e) {
+    live.lastMsg = Date.now();
+    var m;
+    try { m = JSON.parse(e.data); } catch (x) { return; }
+    onLiveMessage(m);
+  };
+  ws.onclose = function () { if (live.ws === ws) dropLive(); };
+  ws.onerror = function () { if (live.ws === ws) dropLive(); };
+}
+
+function onLiveMessage(m) {
+  switch (m.type) {
+    case "readings": applyReadings(m); break;
+    case "wifi":     applyWiFiStatus(m); break;
+    case "cloud":    applyCloudStatus(m); break;
+    case "prot":     applyProtection(m); break;
+    case "logs":     homeLogs = m.logs || []; renderHomeLog(); break;
+    case "log":
+      homeLogs.unshift({ ts: m.ts, ev: m.ev, rc: m.rc });
+      if (homeLogs.length > 150) homeLogs.length = 150;
+      renderHomeLog();
+      break;
+    case "auth":     window.location.href = "/"; break;   // session expired / logged out
+  }
+}
+
+// A silently dead link (WiFi drop) never fires onclose quickly: detect staleness ourselves.
+setInterval(function () {
+  if (live.ws && live.ws.readyState === 1 && Date.now() - live.lastMsg > LIVE_STALE_MS) dropLive();
+}, 2000);
 
 // ---------- wifi status / header ----------
 function setWifiIcon(mode, rssi) {
@@ -90,29 +147,24 @@ function setWifiIcon(mode, rssi) {
   }
 }
 
-function loadWiFiStatus() {
-  fetch("/api/getWiFiStatus").then(guard)
-    .then(function (r) { return r.json(); })
-    .then(function (s) {
-      $("switchNameText").textContent = s.deviceName;
-      document.title = s.deviceName + " — Meter";
-      if (!$("deviceName").value) $("deviceName").value = s.deviceName;
-      if (!$("ssid").value && s.savedSSID) $("ssid").value = s.savedSSID;
+function applyWiFiStatus(s) {
+  $("switchNameText").textContent = s.deviceName;
+  document.title = s.deviceName + " — Meter";
+  if (!$("deviceName").value) $("deviceName").value = s.deviceName;
+  if (!$("ssid").value && s.savedSSID) $("ssid").value = s.savedSSID;
 
-      $("apwifiName").textContent = s.ssid || "";
-      setWifiIcon(s.mode, s.rssi);
+  $("apwifiName").textContent = s.ssid || "";
+  setWifiIcon(s.mode, s.rssi);
 
-      if (s.mode === "WIFI") {
-        var sig = s.rssi >= -60 ? "Strong" : (s.rssi >= -75 ? "Good" : "Weak");
-        $("connectionDetails").textContent = "Connected to \"" + s.ssid + "\" (signal: " + sig + ").";
-        $("wiFiDetails").textContent = "Open this page at  http://" + s.mdns + "  or  http://" + s.ip;
-      } else {
-        $("connectionDetails").textContent = "Running in Access Point mode (" + s.ssid + ").";
-        $("wiFiDetails").textContent = "Enter your WiFi below to connect to your home network.";
-      }
-      if (s.mac) $("macDetails").textContent = "Device MAC address: " + s.mac;
-    })
-    .catch(function () {});
+  if (s.mode === "WIFI") {
+    var sig = s.rssi >= -60 ? "Strong" : (s.rssi >= -75 ? "Good" : "Weak");
+    $("connectionDetails").textContent = "Connected to \"" + s.ssid + "\" (signal: " + sig + ").";
+    $("wiFiDetails").textContent = "Open this page at  http://" + s.mdns + "  or  http://" + s.ip;
+  } else {
+    $("connectionDetails").textContent = "Running in Access Point mode (" + s.ssid + ").";
+    $("wiFiDetails").textContent = "Enter your WiFi below to connect to your home network.";
+  }
+  if (s.mac) $("macDetails").textContent = "Device MAC address: " + s.mac;
 }
 
 // ---------- wifi scan ----------
@@ -157,8 +209,7 @@ function postWithPin(url, obj, msgId, okText, after) {
 function saveWifi() {
   var ssid = $("ssid").value.trim();
   if (!ssid) { setMsg("wifiMsg", "Enter a WiFi name.", false); return; }
-  postWithPin("/api/setWiFi", { ssid: ssid, pass: $("pass").value }, "wifiMsg", "Saved.",
-    function () { setTimeout(loadWiFiStatus, 9000); });
+  postWithPin("/api/setWiFi", { ssid: ssid, pass: $("pass").value }, "wifiMsg", "Saved.");
 }
 function saveName() {
   var name = $("deviceName").value.trim();
@@ -179,7 +230,6 @@ function disconnectWifi() {
   if (!confirm("Forget the saved WiFi and switch to Access Point mode?")) return;
   postWithPin("/api/disableWiFi", {}, "wifiMsg", "Disconnected.", function () {
     $("ssid").value = "";
-    setTimeout(loadWiFiStatus, 4000);
   });
 }
 function logout() {
@@ -195,34 +245,28 @@ function logout() {
 }
 
 // ---------- cloud (MQTT) ----------
-function loadCloudStatus() {
-  fetch("/api/getCloudStatus").then(guard)
-    .then(function (r) { return r.json(); })
-    .then(function (c) {
-      $("cloudStatusText").textContent = c.message || "—";
-      if (c.configured) {
-        $("cloudEmailDiv").style.display = "none";
-        $("cloudStatusDiv").style.display = "block";
-        if (c.email && !$("clEmail").value) $("clEmail").value = c.email;
-      } else {
-        $("cloudEmailDiv").style.display = "block";
-        $("cloudStatusDiv").style.display = "none";
-      }
-    })
-    .catch(function () {});
+function applyCloudStatus(c) {
+  $("cloudStatusText").textContent = c.message || "—";
+  if (c.configured) {
+    $("cloudEmailDiv").style.display = "none";
+    $("cloudStatusDiv").style.display = "block";
+    if (c.email && !$("clEmail").value) $("clEmail").value = c.email;
+  } else {
+    $("cloudEmailDiv").style.display = "block";
+    $("cloudStatusDiv").style.display = "none";
+  }
 }
 
+// Status updates after these actions arrive by themselves over the WebSocket.
 function connectCloud() {
   var email = $("clEmail").value.trim();
   if (email.length < 5 || email.indexOf("@") < 0) { setMsg("cloudMsg", "Enter a valid email.", false); return; }
-  postWithPin("/api/connectCloud", { email: email }, "cloudMsg", "Registering…", function () {
-    var n = 0; var iv = setInterval(function () { loadCloudStatus(); if (++n >= 8) clearInterval(iv); }, 2500);
-  });
+  postWithPin("/api/connectCloud", { email: email }, "cloudMsg", "Registering…");
 }
 
 function disconnectCloud() {
   if (!confirm("Disconnect this device from the EVIQtech cloud?")) return;
-  postWithPin("/api/pauseCloud", { operation: "disconnect" }, "cloudMsg", "Disconnected.", loadCloudStatus);
+  postWithPin("/api/pauseCloud", { operation: "disconnect" }, "cloudMsg", "Disconnected.");
 }
 
 // ---------- output voltage on a failed phase ----------
@@ -280,20 +324,15 @@ function updProtStatus(i, p) {
   s.style.color = (p.status === "OK") ? "#1b7a4b"
                 : (p.status === "off" || p.status === "—") ? "#999" : "#d32f2f";
 }
-function loadProtection() {
-  fetch("/api/getProtection").then(guard)
-    .then(function (r) { return r.json(); })
-    .then(function (res) {
-      var ph = res.phases || [];
-      for (var k = 0; k < ph.length; k++) {
-        var i = k + 1;
-        if (!$("protEn" + i)) continue;   // no box for this phase on the page
-        if (!protLoaded) fillProt(i, ph[k]);   // don't clobber edits after first load
-        updProtStatus(i, ph[k]);
-      }
-      protLoaded = true;
-    })
-    .catch(function () {});
+function applyProtection(res) {
+  var ph = res.phases || [];
+  for (var k = 0; k < ph.length; k++) {
+    var i = k + 1;
+    if (!$("protEn" + i)) continue;   // no box for this phase on the page
+    if (!protLoaded) fillProt(i, ph[k]);   // don't clobber edits after first load
+    updProtStatus(i, ph[k]);
+  }
+  protLoaded = true;
 }
 // Auto-hiding toast (bottom-center). ok=true -> green, false -> red. Hides after 5 s.
 function showToast(text, ok) {
@@ -479,29 +518,15 @@ function renderLogTable(logs, limit) {
   return html;
 }
 
-function loadHomeLog() {
+var homeLogs = [];
+function renderHomeLog() {
   var box = $("homeLog");
   if (!box) return;
-  fetch("/api/getLogs").then(guard)
-    .then(function (r) { return r.json(); })
-    .then(function (res) {
-      var logs = res.logs || [];
-      box.innerHTML = logs.length ? renderLogTable(logs, 0) : "No events logged yet.";
-    })
-    .catch(function () {});
+  box.innerHTML = homeLogs.length ? renderLogTable(homeLogs, 0) : "No events logged yet.";
 }
 
 // ---------- boot ----------
 window.addEventListener("load", function () {
   showContent("menu-1");
-  loadWiFiStatus();
-  loadCloudStatus();
-  loadHomeLog();
-  loadProtection();
-  pollReadings();
-  setInterval(pollReadings, 1000);
-  // setInterval(loadWiFiStatus, 15000);
-  // setInterval(loadCloudStatus, 15000);
-  // setInterval(loadHomeLog, 5000);
-  // setInterval(loadProtection, 3000);
+  connectLive();   // device pushes a full snapshot on connect, then live updates
 });

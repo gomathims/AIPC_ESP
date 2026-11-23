@@ -20,6 +20,7 @@
 #include "protection.h"
 #include "time_util.h"
 #include "cumulative_energy.h"
+#include "ws_events.h"
 
 // web_content.h / web_mappings.h are generated at build time by webgen.py from
 // data/. web_mappings.h DEFINES the maps (stringMap / binaryMap), so it must be
@@ -127,8 +128,8 @@ static uint32_t cookieToken() {
 
 static bool isAuthed() { return tokenValid(cookieToken()); }
 
-bool portalCookieAuthed(const String &cookieHeader) {
-    return tokenValid(parseCookieToken(cookieHeader));
+bool portalSessionValid(uint32_t sid) {
+    return tokenValid(sid);
 }
 
 static bool requireAuth() {
@@ -232,7 +233,7 @@ static void handleStaticRequest() {
 // ----------------------------------------------------------------------------
 // JSON endpoints
 // ----------------------------------------------------------------------------
-static String buildReadingsJson() {
+String portalReadingsJson() {
     JsonDocument doc;
     doc["v1"] = round(voltL1 * 10.0) / 10.0;
     doc["v2"] = round(voltL2 * 10.0) / 10.0;
@@ -269,7 +270,7 @@ static String buildReadingsJson() {
     return out;
 }
 
-static String buildWiFiStatusJson() {
+String portalWiFiStatusJson() {
     JsonDocument doc;
     doc["deviceName"] = deviceName;
     doc["wifiConfigured"] = isWiFiSet;
@@ -389,6 +390,7 @@ static void onClearLogs() {
     JsonDocument doc; if (!readJsonBody(doc)) return;
     if (!verifyDevicePin(doc["authPin"] | "")) { server.send(403, "text/plain", "Incorrect PIN"); return; }
     clearEventLog();
+    wsPushLogs();
     server.send(200, "text/plain", "Logs cleared.");
 }
 
@@ -400,6 +402,7 @@ static void onSetProtection() {
         server.send(400, "text/plain", "Invalid limits: High Voltage must be greater than Low Voltage, and Overload current > 0.");
         return;
     }
+    wsPushProtection();
     server.send(200, "text/plain", "Protection settings saved.");
 }
 
@@ -529,32 +532,15 @@ static void onOtaFinished() {
 }
 
 static void registerRoutes() {
-    server.on("/api/getReadings", HTTP_GET, []() {
-        if (!requireAuth()) return;
-        server.send(200, "application/json", buildReadingsJson());
-    });
-    server.on("/api/getWiFiStatus", HTTP_GET, []() {
-        if (!requireAuth()) return;
-        server.send(200, "application/json", buildWiFiStatusJson());
-    });
+    // Live values (readings, WiFi/cloud status, protection, logs) are pushed over
+    // the WebSocket on port 81 (ws_events.cpp); only commands remain on HTTP.
+    // deviceName stays: the login page needs it before a session exists.
     server.on("/api/deviceName", HTTP_GET, []() {
         server.send(200, "text/plain", deviceName);
     });
     server.on("/api/scanNetworks", HTTP_GET, onScanNetworks);
-    server.on("/api/getLogs", HTTP_GET, []() {
-        if (!requireAuth()) return;
-        server.send(200, "application/json", getLogsJson());
-    });
     server.on("/api/clearLogs", HTTP_POST, onClearLogs);
-    server.on("/api/getProtection", HTTP_GET, []() {
-        if (!requireAuth()) return;
-        server.send(200, "application/json", getProtectionJson());
-    });
     server.on("/api/setProtection", HTTP_POST, onSetProtection);
-    server.on("/api/getCloudStatus", HTTP_GET, []() {
-        if (!requireAuth()) return;
-        server.send(200, "application/json", getCloudStatusJson());
-    });
     server.on("/api/connectCloud", HTTP_POST, onConnectCloud);
     server.on("/api/pauseCloud", HTTP_POST, onPauseCloud);
     server.on("/api/login", HTTP_POST, onLogin);
