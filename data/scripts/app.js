@@ -59,21 +59,27 @@ function applyReadings(d) {
   if ($("battV")) $("battV").textContent = n1(d.batt);
   if ($("batteryChip")) $("batteryChip").classList.toggle("low", Number(d.batt) < 1.5);
 
-  // Power-flow arrows. relayStatus bit -> arrows it shows. Arrow id flSO: source S
-  // (0=L1 1=L2 2=L3 3=UPS) feeds output O (0=R 1=Y 2=B). Aux relay xyAux = output x fed from line y.
-  var FLOWS = [
-    ["fl00"],                  // 0  rMain  : L1 -> R
-    ["fl11"],                  // 1  yMain  : L2 -> Y
-    ["fl22"],                  // 2  bMain  : L3 -> B
-    ["fl10"],                  // 3  ryAux  : L2 -> R
-    ["fl01"],                  // 4  yrAux  : L1 -> Y
-    ["fl21"],                  // 5  ybAux  : L3 -> Y
-    ["fl12"],                  // 6  byAux  : L2 -> B
-    ["fl20"],                  // 7  rbAux  : L3 -> R
-    ["fl02"],                  // 8  brAux  : L1 -> B
-    ["fl30", "fl31", "fl32"]   // 9  upsMain: UPS -> R, Y, B
-  ];
-  var rs = Number(d.relayStatus) || 0;
+  // Power-flow arrows (relayStatus bits 0-9) and the UPS aux badge (bit 10).
+  drawFlows(Number(d.relayStatus) || 0);
+}
+
+// ---------- power-flow arrows (Home tab SVG) ----------
+// relayStatus bit -> arrows it shows. Arrow id flSO: source S (0=L1 1=L2 2=L3 3=UPS) feeds
+// output O (0=R 1=Y 2=B). Aux relay xyAux is read as "output x fed from line y".
+var FLOWS = [
+  ["fl00"],                  // 0  rMain  : L1 -> R
+  ["fl11"],                  // 1  yMain  : L2 -> Y
+  ["fl22"],                  // 2  bMain  : L3 -> B
+  ["fl10"],                  // 3  ryAux  : L2 -> R
+  ["fl01"],                  // 4  yrAux  : L1 -> Y
+  ["fl21"],                  // 5  ybAux  : L3 -> Y
+  ["fl12"],                  // 6  byAux  : L2 -> B
+  ["fl20"],                  // 7  rbAux  : L3 -> R
+  ["fl02"],                  // 8  brAux  : L1 -> B
+  ["fl30", "fl31", "fl32"]   // 9  upsMain: UPS -> R, Y, B
+];
+
+function drawFlows(rs) {
   for (var b = 0; b < FLOWS.length; b++) {
     for (var k = 0; k < FLOWS[b].length; k++) {
       var el = $(FLOWS[b][k]);
