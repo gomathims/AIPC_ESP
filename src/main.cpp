@@ -12,6 +12,7 @@
 #include "time_util.h"
 #include "ws_events.h"
 #include "cumulative_energy.h"
+// #include "tft_display.h"
 
 
 // STM32 front-end frame calibration (unchanged from the original bring-up code).
@@ -88,7 +89,9 @@ time_t curTime;
 
 
 
-static uint8_t rxDataV1[58];
+// STM metering payload after "STM\0": 60 bytes (STM transmit[60]); [58] = contactor feedback bits.
+static uint8_t rxDataV1[60];
+uint8_t contactorStatus = 0;   // bit0 = CF1 ... bit6 = CF7 (1 = feedback active)
 
 
 static void protectionUartSend(){
@@ -250,6 +253,7 @@ static void uartCollection() {
         uint32_t stmEpoch;
         memcpy(&stmEpoch, &rxDataV1[54], sizeof(stmEpoch));
         curTime = (time_t)stmEpoch;
+        contactorStatus = rxDataV1[58];   // CF1..CF7 feedback bits ([59] unused)
 
         // Serial.printf("The voltage is %.2f\r\n",bateryVoltag);
 
@@ -265,9 +269,7 @@ static void uartCollection() {
 			voltL3 = 0;
 		}
 		
-		if (voltL4 <= 1
-        
-        ) {
+		if (voltL4 <= 1) {
 			voltL4 = 0;
 		}
 
@@ -382,6 +384,7 @@ void setup() {
     initPreferences();
     initProtection();
     initCumulativeEnergy();
+    // initDisplay();          // 2.4" ILI9341 TFT: colour self-test, then the monitoring screen
     initEventLog();
     initWiFiPortal();
     initWsEvents();
@@ -422,5 +425,6 @@ void loop() {
     if (otaState == OTA_DOWNLOADING) performOTAUpdate();
     // Record the boot/restart event to flash once the clock is available.
     serviceEventLog();
-
+    // Refresh the TFT phase-monitoring screen (only changed values are repainted).
+    // serviceDisplay();
 }

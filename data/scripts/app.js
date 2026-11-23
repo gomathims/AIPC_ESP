@@ -58,6 +58,18 @@ function applyReadings(d) {
   if ($("rtcTime")) $("rtcTime").textContent = t;
   if ($("battV")) $("battV").textContent = n1(d.batt);
   if ($("batteryChip")) $("batteryChip").classList.toggle("low", Number(d.batt) < 1.5);
+
+  updateOutputVoltage(d);
+
+  // Contactor feedback: d.cf bit0 = CF1 ... bit6 = CF7 (1 = ON).
+  var cf = Number(d.cf) || 0;
+  for (var k = 0; k < 7; k++) {
+    var chip = $("cf" + (k + 1));
+    if (!chip) continue;
+    var on = (cf >> k) & 1;
+    chip.classList.toggle("on", !!on);
+    chip.querySelector(".cs").textContent = on ? "ON" : "OFF";
+  }
 }
 
 function pollReadings() {
@@ -211,6 +223,43 @@ function connectCloud() {
 function disconnectCloud() {
   if (!confirm("Disconnect this device from the EVIQtech cloud?")) return;
   postWithPin("/api/pauseCloud", { operation: "disconnect" }, "cloudMsg", "Disconnected.", loadCloudStatus);
+}
+
+// ---------- output voltage on a failed phase ----------
+// When a phase input is off, the STM feeds that phase's output through an aux relay
+// from another phase. relayStatus (d.rs) bits from the STM frame:
+//   3 = R->Y aux, 4 = Y->R aux, 5 = Y->B aux, 6 = B->Y aux, 7 = R->B aux, 8 = B->R aux.
+// Feeders per phase box (1 = L1/R, 2 = L2/Y, 3 = L3/B): [relay bit, source phase].
+var PHASE_OFF_V = 100;   // below this the input is treated as off (0 V or noise)
+var OUT_FEEDERS = {
+  1: [[4, 2], [8, 3]],   // R output fed from Y or B
+  2: [[3, 1], [6, 3]],   // Y output fed from R or B
+  3: [[7, 1], [5, 2]]    // B output fed from R or Y
+};
+var PHASE_LETTER = { 1: "R", 2: "Y", 3: "B", 4: "INV" };
+var UPS_MAIN_BIT = 9;    // all phases down -> STM turns the UPS main relay ON, inverter feeds R, Y and B
+function updateOutputVoltage(d) {
+  var rs = Number(d.rs) || 0;
+  var upsOn = (rs >> UPS_MAIN_BIT) & 1;
+  for (var ph = 1; ph <= 3; ph++) {
+    var cell = $("out" + ph);
+    if (!cell) continue;
+    var src = 0;
+    if (upsOn) {
+      src = 4;             // inverter output (v4) on every phase
+    } else {
+      var f = OUT_FEEDERS[ph];
+      for (var k = 0; k < f.length; k++) {
+        if ((rs >> f[k][0]) & 1) { src = f[k][1]; break; }
+      }
+    }
+    var inputOff = Number(d["v" + ph]) < PHASE_OFF_V;
+    var show = inputOff || src !== 0;   // only appears while this phase is down / switched over
+    cell.classList.toggle("show", show);
+    if (!show) continue;
+    cell.querySelector(".pl").textContent = src ? ("Output (from " + PHASE_LETTER[src] + ")") : "Output (no source)";
+    cell.querySelector(".pv").textContent = src ? n1(d["v" + src]) : "0";
+  }
 }
 
 // ---------- protection ----------

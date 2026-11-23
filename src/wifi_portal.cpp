@@ -257,6 +257,8 @@ static String buildReadingsJson() {
     doc["c3"] = round(cumEnergy[2] * 1000.0) / 1000.0;
     doc["c4"] = round(cumEnergy[3] * 1000.0) / 1000.0;
     doc["batt"] = round(bateryVoltag * 10.0) / 10.0;
+    doc["cf"] = contactorStatus;   // contactor feedback bits CF1..CF7
+    doc["rs"] = (uint16_t)relayStatus;   // relay bits; aux bits pick the output-voltage source
     // doc["valid"] = (bool)meterDataValid;
     doc["time"] = getDeviceTimeString();
     doc["stmTime"] = getStmTimeString();
