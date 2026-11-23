@@ -18,7 +18,13 @@
 //   STM -> ESP   0xAB                    ready, bootloader is listening
 //   ESP -> STM   size[4], little-endian  image length in bytes
 //   ESP -> STM   <size bytes>            raw firmware, streamed in chunks
-//   STM -> ESP   0xAC | 0xAE             (optional) final success / failure
+//   ESP -> STM   crc32[4], little-endian CRC-32 (IEEE/zlib) of the <size> bytes
+//   STM -> ESP   0xAC | 0xAE             0xAC only if the CRC of the programmed
+//                                        bank matches; 0xAE otherwise
+//
+// Apply:
+//   ESP -> STM   apply signature
+//   STM -> ESP   0xAC (swapping banks) | 0xAE (no CRC-verified image staged)
 //
 // The 4-byte size is sent because the receiver has no other way to know when
 // the image ends — there is no end marker and no idle timeout in this protocol.
@@ -51,8 +57,8 @@
 // bootloader already knows the size or uses its own terminator.
 #define STM_UPD_SEND_SIZE  1
 
-// Wait for STM_UPD_DONE_OK after the last byte. Set to 0 if your bootloader
-// jumps straight to the application without reporting back.
+// Wait for the final verdict after the CRC trailer. Keep this at 1: it is the
+// only way the ESP learns whether the CRC check passed.
 #define STM_UPD_WAIT_FINAL 1
 
 // Wait for STM_UPD_READY (0xAB) after each chunk as well. Off by default: the

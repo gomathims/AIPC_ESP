@@ -50,6 +50,32 @@ static bool waitFor(uint8_t want, uint32_t timeoutMs) {
     return false;
 }
 
+// Wait for the STM32's final verdict. Returns STM_UPD_DONE_OK, STM_UPD_DONE_FAIL,
+// or -1 on timeout. Returning on 0xAE matters: a plain waitFor(0xAC) would throw
+// the failure byte away and sit out the whole timeout before reporting.
+static int waitForVerdict(uint32_t timeoutMs) {
+    uint32_t start = millis();
+    while (millis() - start < timeoutMs) {
+        int b = readByte(100);
+        if (b == STM_UPD_DONE_OK || b == STM_UPD_DONE_FAIL) return b;
+        yield();
+    }
+    return -1;
+}
+
+// CRC-32 (IEEE 802.3 / zlib: reflected, poly 0xEDB88320). Start with
+// 0xFFFFFFFF, XOR the result with 0xFFFFFFFF. Must match otaCrc32Update() in
+// the STM32's OTAupdate.c — deliberately not the core's crc32(), whose
+// init/final conventions differ between ESP cores.
+static uint32_t crc32Update(uint32_t crc, const uint8_t *p, size_t n) {
+    while (n--) {
+        crc ^= *p++;
+        for (uint8_t k = 0; k < 8; k++)
+            crc = (crc >> 1) ^ (0xEDB88320UL & (0UL - (crc & 1UL)));
+    }
+    return crc;
+}
+
 // ---------------------------------------------------------------------------
 // Step 1 — ask the STM32 to enter its bootloader and wait for 0xAB
 // ---------------------------------------------------------------------------
@@ -142,11 +168,14 @@ StmOtaResult stmOtaFlashFromFile(const char *path) {
     // stack has already consumed most of the available stack space.
     static uint8_t buf[STM_UPD_CHUNK];
     uint32_t sent = 0;
+    uint32_t crc = 0xFFFFFFFFUL;
 
     while (sent < total) {
         int n = f.read(buf, STM_UPD_CHUNK);
         if (n <= 0) { result = STM_OTA_READ_FAILED; break; }
 
+        // CRC over exactly the bytes that go on the wire.
+        crc = crc32Update(crc, buf, (size_t)n);
         Serial.write(buf, n);
         Serial.flush();          // block until the burst is physically out
 
@@ -164,10 +193,25 @@ StmOtaResult stmOtaFlashFromFile(const char *path) {
 
     f.close();
 
-    // ---- 4. Final status ---------------------------------------------------
+    // ---- 4. CRC32 trailer, little-endian ----------------------------------
+    // The STM32 recomputes it over the bank it just programmed and only
+    // answers 0xAC (and only allows apply) if the two match.
+    if (result == STM_OTA_OK) {
+        crc ^= 0xFFFFFFFFUL;
+        uint8_t crcb[4] = {
+            (uint8_t)(crc),
+            (uint8_t)(crc >> 8),
+            (uint8_t)(crc >> 16),
+            (uint8_t)(crc >> 24),
+        };
+        Serial.write(crcb, sizeof(crcb));
+        Serial.flush();
+    }
+
+    // ---- 5. Final status ---------------------------------------------------
 #if STM_UPD_WAIT_FINAL
     if (result == STM_OTA_OK) {
-        if (!waitFor(STM_UPD_DONE_OK, STM_UPD_FINAL_TIMEOUT_MS)) {
+        if (waitForVerdict(STM_UPD_FINAL_TIMEOUT_MS) != STM_UPD_DONE_OK) {
             result = STM_OTA_REJECTED;
         }
     }
@@ -203,9 +247,11 @@ StmOtaResult stmOtaApply() {
     // Waiting for that first matters: without it, a metering frame that was
     // already queued when 0xBB arrived looks exactly like the new firmware
     // coming back, and every attempt reports success regardless of outcome.
-    if (!waitFor(STM_UPD_DONE_OK, STM_UPD_READY_TIMEOUT_MS)) {
+    // The STM32 answers 0xAE if no CRC-verified image is staged (e.g. the last
+    // transfer failed, or it has reset since) — it will not swap banks then.
+    if (waitForVerdict(STM_UPD_READY_TIMEOUT_MS) != STM_UPD_DONE_OK) {
         snprintf(stmOtaMessage, sizeof(stmOtaMessage),
-                 "front-end did not accept the install (nothing staged?)");
+                 "front-end refused the install (no verified image staged)");
         stmOtaInProgress = false;
         return STM_OTA_REJECTED;
     }
