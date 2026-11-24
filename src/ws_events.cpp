@@ -5,18 +5,14 @@
 
 #include "wifi_portal.h"
 #include "meter_state.h"
-#include "protection.h"
 #include "cloud_mqtt.h"
-#include "event_log.h"
 
 #define WS_PORT          81
 #define WS_UART_BUF_SIZE 256     // max bytes per raw broadcast event
 #define WS_UART_IDLE_MS  10UL    // gap that ends a UART burst (~115 bytes at 115200)
 
 // Live push cadence.
-#define WS_READINGS_MIN_MS   500UL    // at most 2 readings pushes per second
-#define WS_READINGS_MAX_MS  2000UL    // push at least this often even with no new STM frame
-#define WS_PROT_MS          2000UL    // protection live values + status
+#define WS_READINGS_PERIOD_MS 3000UL  // readings every 3 s; a relay change is sent at once
 #define WS_WIFI_CHECK_MS    3000UL    // WiFi status: pushed only when it changed
 #define WS_CLOUD_CHECK_MS   2000UL    // cloud status: pushed only when it changed
 #define WS_AUTH_CHECK_MS   30000UL    // re-validate each client's session
@@ -37,9 +33,9 @@ static uint8_t uartBuf[WS_UART_BUF_SIZE];
 static size_t uartLen = 0;
 static unsigned long uartLastByte = 0;
 
-static unsigned long lastReadings = 0, lastProt = 0, lastWifiCheck = 0,
+static unsigned long lastReadings = 0, lastWifiCheck = 0,
                      lastCloudCheck = 0, lastAuthCheck = 0;
-static unsigned long lastMeterSent = 0;
+static uint16_t lastRelaySent = 0;   // relayStatus in the last readings push
 static String lastWifiJson, lastCloudJson;
 
 // ----------------------------------------------------------------------------
@@ -87,9 +83,7 @@ static void sendSnapshot(uint8_t num) {
     String m;
     m = typed("wifi", portalWiFiStatusJson());     ws.sendTXT(num, m);
     m = typed("cloud", getCloudStatusJson());      ws.sendTXT(num, m);
-    m = typed("prot", getProtectionJson());        ws.sendTXT(num, m);
     m = typed("readings", portalReadingsJson());   ws.sendTXT(num, m);
-    m = typed("logs", getLogsJson());              ws.sendTXT(num, m);
 }
 
 static void onWsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
@@ -160,31 +154,6 @@ void wsTapUart(const uint8_t *data, size_t len) {
 }
 
 // ----------------------------------------------------------------------------
-// event log pushes
-// ----------------------------------------------------------------------------
-void wsPushLogRecord(uint32_t ts, uint8_t ev, uint8_t aux) {
-    if (liveCount == 0) return;
-    char buf[64];
-    snprintf(buf, sizeof(buf), "{\"type\":\"log\",\"ts\":%lu,\"ev\":%u,\"rc\":%u}",
-             (unsigned long)ts, ev, aux);
-    String m(buf);
-    sendLive(m);
-}
-
-void wsPushLogs() {
-    if (liveCount == 0) return;
-    String m = typed("logs", getLogsJson());
-    sendLive(m);
-}
-
-void wsPushProtection() {
-    if (liveCount == 0) return;
-    String m = typed("prot", getProtectionJson());
-    sendLive(m);
-    lastProt = millis();
-}
-
-// ----------------------------------------------------------------------------
 void initWsEvents() {
     ws.onEvent(onWsEvent);
     ws.begin();
@@ -200,16 +169,14 @@ void serviceWsEvents() {
     if (liveCount == 0) return;
     unsigned long now = millis();
 
-    // Live readings: on every new STM frame (rate-limited), else a slow heartbeat.
-    bool fresh = (meterLastUpdate != lastMeterSent);
-    if ((fresh && now - lastReadings >= WS_READINGS_MIN_MS) || now - lastReadings >= WS_READINGS_MAX_MS) {
+    // Live readings: immediately when the relay state changes, otherwise once every 3 s.
+    uint16_t rs = relayStatus;
+    if (rs != lastRelaySent || now - lastReadings >= WS_READINGS_PERIOD_MS) {
         lastReadings = now;
-        lastMeterSent = meterLastUpdate;
+        lastRelaySent = rs;
         String m = typed("readings", portalReadingsJson());
         sendLive(m);
     }
-
-    if (now - lastProt >= WS_PROT_MS) wsPushProtection();
 
     if (now - lastWifiCheck >= WS_WIFI_CHECK_MS) {
         lastWifiCheck = now;

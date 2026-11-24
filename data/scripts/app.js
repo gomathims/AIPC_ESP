@@ -21,6 +21,9 @@ function showContent(menuId) {
   for (var j = 0; j < menus.length; j++) menus[j].classList.remove("active");
   var active = document.querySelector(".menu-" + menuId.split("-")[1]);
   if (active) active.classList.add("active");
+  // Fresh data as soon as a tab opens (functions are defined further down).
+  if (menuId === "menu-1" && typeof loadHomeLog === "function") loadHomeLog();
+  if (menuId === "menu-3" && typeof loadProtection === "function") loadProtection();
 }
 
 function viewPassword(id) {
@@ -61,21 +64,32 @@ function applyReadings(d) {
 
   // Power-flow arrows (relayStatus bits 0-9) and the UPS aux badge (bit 10).
   drawFlows(Number(d.relayStatus) || 0);
+
+  // Contactor feedback: d.cf bit0 = CF1 ... bit6 = CF7 (1 = ON).
+  var cf = Number(d.cf) || 0;
+  for (var c = 0; c < 7; c++) {
+    var chip = $("cf" + (c + 1));
+    if (!chip) continue;
+    var on = (cf >> c) & 1;
+    chip.classList.toggle("on", !!on);
+    chip.querySelector(".cs").textContent = on ? "ON" : "OFF";
+  }
 }
 
 // ---------- power-flow arrows (Home tab SVG) ----------
 // relayStatus bit -> arrows it shows. Arrow id flSO: source S (0=L1 1=L2 2=L3 3=UPS) feeds
-// output O (0=R 1=Y 2=B). Aux relay xyAux is read as "output x fed from line y".
+// output O (0=R 1=Y 2=B). Aux relay xyAux = line x feeds output y (STM main.c): e.g. when
+// R fails the STM turns on yrAux, so the Y line arrow must go to the R output.
 var FLOWS = [
   ["fl00"],                  // 0  rMain  : L1 -> R
   ["fl11"],                  // 1  yMain  : L2 -> Y
   ["fl22"],                  // 2  bMain  : L3 -> B
-  ["fl10"],                  // 3  ryAux  : L2 -> R
-  ["fl01"],                  // 4  yrAux  : L1 -> Y
-  ["fl21"],                  // 5  ybAux  : L3 -> Y
-  ["fl12"],                  // 6  byAux  : L2 -> B
-  ["fl20"],                  // 7  rbAux  : L3 -> R
-  ["fl02"],                  // 8  brAux  : L1 -> B
+  ["fl01"],                  // 3  ryAux  : L1 (R) -> Y output   (Y failed)
+  ["fl10"],                  // 4  yrAux  : L2 (Y) -> R output   (R failed)
+  ["fl12"],                  // 5  ybAux  : L2 (Y) -> B output   (B failed)
+  ["fl21"],                  // 6  byAux  : L3 (B) -> Y output   (Y failed)
+  ["fl02"],                  // 7  rbAux  : L1 (R) -> B output   (B failed)
+  ["fl20"],                  // 8  brAux  : L3 (B) -> R output   (R failed)
   ["fl30", "fl31", "fl32"]   // 9  upsMain: UPS -> R, Y, B
 ];
 
@@ -86,15 +100,66 @@ function drawFlows(rs) {
       if (el) el.classList.toggle("off", !((rs >> b) & 1));
     }
   }
-  if ($("upsAuxBadge")) $("upsAuxBadge").classList.toggle("off", !((rs >> 10) & 1));   // 10 upsAux
 }
 
-function pollReadings() {
-  fetch("/api/getReadings").then(guard)
-    .then(function (r) { return r.json(); })
-    .then(applyReadings)
-    .catch(function () {});
+// ---------- live data over WebSocket (port 81) ----------
+// Readings, WiFi status and cloud status are pushed by the device (src/ws_events.cpp).
+// There is NO /api/getReadings endpoint any more — do not bring back fetch polling for them.
+// The event log and protection settings use the HTTP APIs (loadHomeLog / loadProtection).
+var LIVE_STALE_MS = 8000;   // device pushes readings at least every 2 s
+var live = { ws: null, retry: 1000, lastMsg: 0, timer: null };
+
+function sessionId() {
+  var m = document.cookie.match(/(?:^|;\s*)eviqsid=(\d+)/);
+  return m ? m[1] : "";
 }
+
+function scheduleLive() {
+  if (live.timer) return;
+  live.timer = setTimeout(function () { live.timer = null; connectLive(); }, live.retry);
+  live.retry = Math.min(live.retry * 2, 10000);
+}
+
+function dropLive() {
+  var ws = live.ws;
+  live.ws = null;
+  if (ws) {
+    ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+    try { ws.close(); } catch (e) {}
+  }
+  scheduleLive();
+}
+
+function connectLive() {
+  if (!sessionId()) { window.location.href = "/"; return; }
+  var ws;
+  try { ws = new WebSocket("ws://" + location.hostname + ":81/live?sid=" + sessionId()); }
+  catch (e) { scheduleLive(); return; }
+  live.ws = ws;
+  ws.onopen = function () { live.retry = 1000; live.lastMsg = Date.now(); };
+  ws.onmessage = function (e) {
+    live.lastMsg = Date.now();
+    var m;
+    try { m = JSON.parse(e.data); } catch (x) { return; }
+    onLiveMessage(m);
+  };
+  ws.onclose = function () { if (live.ws === ws) dropLive(); };
+  ws.onerror = function () { if (live.ws === ws) dropLive(); };
+}
+
+function onLiveMessage(m) {
+  switch (m.type) {
+    case "readings": applyReadings(m); break;
+    case "wifi":     applyWiFiStatus(m); break;
+    case "cloud":    applyCloudStatus(m); break;
+    case "auth":     window.location.href = "/"; break;   // session expired / logged out
+  }
+}
+
+// A silently dead link (WiFi drop) never fires onclose quickly: detect staleness ourselves.
+setInterval(function () {
+  if (live.ws && live.ws.readyState === 1 && Date.now() - live.lastMsg > LIVE_STALE_MS) dropLive();
+}, 2000);
 
 // ---------- wifi status / header ----------
 function setWifiIcon(mode, rssi) {
@@ -284,15 +349,24 @@ function updProtStatus(i, p) {
   s.style.color = (p.status === "OK") ? "#1b7a4b"
                 : (p.status === "off" || p.status === "—") ? "#999" : "#d32f2f";
 }
-function applyProtection(res) {
-  var ph = res.phases || [];
-  for (var k = 0; k < ph.length; k++) {
-    var i = k + 1;
-    if (!$("protEn" + i)) continue;   // no box for this phase on the page
-    if (!protLoaded) fillProt(i, ph[k]);   // don't clobber edits after first load
-    updProtStatus(i, ph[k]);
-  }
-  protLoaded = true;
+var protBusy = false;
+function loadProtection() {
+  if (protBusy) return;
+  protBusy = true;
+  fetch("/api/getProtection").then(guard)
+    .then(function (r) { return r.json(); })
+    .then(function (res) {
+      var ph = res.phases || [];
+      for (var k = 0; k < ph.length; k++) {
+        var i = k + 1;
+        if (!$("protEn" + i)) continue;   // no box for this phase on the page
+        if (!protLoaded) fillProt(i, ph[k]);   // don't clobber edits after first load
+        updProtStatus(i, ph[k]);
+      }
+      protLoaded = true;
+    })
+    .catch(function () {})
+    .then(function () { protBusy = false; });
 }
 // Auto-hiding toast (bottom-center). ok=true -> green, false -> red. Hides after 5 s.
 function showToast(text, ok) {
@@ -356,6 +430,7 @@ function saveProtection() {
   }).then(guard)
     .then(function (r) { return r.text().then(function (t) {
       showToast(t || (r.ok ? "Protection settings saved." : "Save failed."), r.ok);
+      if (r.ok) loadProtection();
     }); })
     .catch(function () { showToast("Request failed.", false); });
 }
@@ -478,15 +553,30 @@ function renderLogTable(logs, limit) {
   return html;
 }
 
-var homeLogs = [];
-function renderHomeLog() {
+var logBusy = false;
+function loadHomeLog() {
   var box = $("homeLog");
-  if (!box) return;
-  box.innerHTML = homeLogs.length ? renderLogTable(homeLogs, 0) : "No events logged yet.";
+  if (!box || logBusy) return;
+  logBusy = true;
+  fetch("/api/getLogs").then(guard)
+    .then(function (r) { return r.json(); })
+    .then(function (res) {
+      var logs = res.logs || [];
+      box.innerHTML = logs.length ? renderLogTable(logs, 0) : "No events logged yet.";
+    })
+    .catch(function () {})
+    .then(function () { logBusy = false; });
 }
+
+function tabVisible(id) { var el = $(id); return !!el && el.style.display !== "none"; }
 
 // ---------- boot ----------
 window.addEventListener("load", function () {
   showContent("menu-1");
-  connectLive();   // device pushes a full snapshot on connect, then live updates
+  connectLive();     // readings + WiFi/cloud status pushed over the WebSocket
+  loadHomeLog();     // log + protection over the HTTP API
+  loadProtection();
+  // Refresh only the tab being looked at, so the device isn't loaded needlessly.
+  setInterval(function () { if (tabVisible("menu-1")) loadHomeLog(); }, 10000);
+  setInterval(function () { if (tabVisible("menu-3")) loadProtection(); }, 3000);
 });

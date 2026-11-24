@@ -65,60 +65,17 @@
 
     function guard(r) { if (r.status === 401) { window.location.href = "/"; throw new Error("unauth"); } return r; }
 
-    // ---- live log over WebSocket (port 81): full list on connect, then each new event ----
+    // ---- event log over the HTTP API ----
     var logs = [];
-    var live = { ws: null, retry: 1000, lastMsg: 0, timer: null };
-
-    function sessionId() {
-      var m = document.cookie.match(/(?:^|;\s*)eviqsid=(\d+)/);
-      return m ? m[1] : "";
-    }
-    function scheduleLive() {
-      if (live.timer) return;
-      live.timer = setTimeout(function () { live.timer = null; connectLive(); }, live.retry);
-      live.retry = Math.min(live.retry * 2, 10000);
-    }
-    function dropLive() {
-      var ws = live.ws;
-      live.ws = null;
-      if (ws) { ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null; try { ws.close(); } catch (e) {} }
-      scheduleLive();
-    }
-    function connectLive() {
-      if (!sessionId()) { window.location.href = "/"; return; }
-      var ws;
-      try { ws = new WebSocket("ws://" + location.hostname + ":81/live?sid=" + sessionId()); }
-      catch (e) { scheduleLive(); return; }
-      live.ws = ws;
-      ws.onopen = function () { live.retry = 1000; live.lastMsg = Date.now(); };
-      ws.onmessage = function (e) {
-        live.lastMsg = Date.now();
-        var m; try { m = JSON.parse(e.data); } catch (x) { return; }
-        if (m.type === "logs") { logs = m.logs || []; renderLogs(); }
-        else if (m.type === "log") {
-          logs.unshift({ ts: m.ts, ev: m.ev, rc: m.rc });
-          if (logs.length > 150) logs.length = 150;
-          renderLogs();
-        }
-        else if (m.type === "wifi" && m.deviceName) {
-          document.getElementById("switchNameText").textContent = m.deviceName;
-          document.title = "Event Log — " + m.deviceName;
-        }
-        else if (m.type === "auth") { window.location.href = "/"; }
-      };
-      ws.onclose = function () { if (live.ws === ws) dropLive(); };
-      ws.onerror = function () { if (live.ws === ws) dropLive(); };
-    }
-    setInterval(function () {
-      if (live.ws && live.ws.readyState === 1 && Date.now() - live.lastMsg > 8000) dropLive();
-    }, 2000);
-
-    // Refresh = reconnect; the device re-sends the full list on connect.
+    var logBusy = false;
     function loadLogs() {
-      document.getElementById("logContent").textContent = "Loading…";
-      if (live.timer) { clearTimeout(live.timer); live.timer = null; }
-      live.retry = 1000;
-      if (live.ws) dropLive(); else connectLive();
+      if (logBusy) return;
+      logBusy = true;
+      fetch("/api/getLogs").then(guard)
+        .then(function (r) { return r.json(); })
+        .then(function (res) { logs = res.logs || []; renderLogs(); })
+        .catch(function () { document.getElementById("logContent").textContent = "Couldn't load logs."; })
+        .then(function () { logBusy = false; });
     }
 
     function renderLogs() {
@@ -156,12 +113,19 @@
         .then(function (r) { return r.text().then(function (t) {
           var m = document.getElementById("logMsg");
           m.textContent = t; m.style.color = r.ok ? "#2e7d32" : "#d32f2f";
-          // the cleared (empty) list arrives over the WebSocket
+          if (r.ok) loadLogs();
         }); })
         .catch(function () { document.getElementById("logMsg").textContent = "Request failed."; });
     }
 
-    window.addEventListener("load", connectLive);
+    fetch("/api/deviceName").then(function (r) { return r.text(); }).then(function (n) {
+      if (n) { document.getElementById("switchNameText").textContent = n; document.title = "Event Log — " + n; }
+    }).catch(function () {});
+
+    window.addEventListener("load", function () {
+      loadLogs();
+      setInterval(loadLogs, 5000);
+    });
   </script>
 </body>
 

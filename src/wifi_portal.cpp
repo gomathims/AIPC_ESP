@@ -391,7 +391,6 @@ static void onClearLogs() {
     JsonDocument doc; if (!readJsonBody(doc)) return;
     if (!verifyDevicePin(doc["authPin"] | "")) { server.send(403, "text/plain", "Incorrect PIN"); return; }
     clearEventLog();
-    wsPushLogs();
     server.send(200, "text/plain", "Logs cleared.");
 }
 
@@ -403,7 +402,6 @@ static void onSetProtection() {
         server.send(400, "text/plain", "Invalid limits: High Voltage must be greater than Low Voltage, and Overload current > 0.");
         return;
     }
-    wsPushProtection();
     server.send(200, "text/plain", "Protection settings saved.");
 }
 
@@ -533,9 +531,17 @@ static void onOtaFinished() {
 }
 
 static void registerRoutes() {
-    // Live values (readings, WiFi/cloud status, protection, logs) are pushed over
-    // the WebSocket on port 81 (ws_events.cpp); only commands remain on HTTP.
+    // Live readings + WiFi/cloud status are pushed over the WebSocket on port 81
+    // (ws_events.cpp). Logs and protection settings stay on these HTTP APIs.
     // deviceName stays: the login page needs it before a session exists.
+    server.on("/api/getLogs", HTTP_GET, []() {
+        if (!requireAuth()) return;
+        server.send(200, "application/json", getLogsJson());
+    });
+    server.on("/api/getProtection", HTTP_GET, []() {
+        if (!requireAuth()) return;
+        server.send(200, "application/json", getProtectionJson());
+    });
     server.on("/api/deviceName", HTTP_GET, []() {
         server.send(200, "text/plain", deviceName);
     });
