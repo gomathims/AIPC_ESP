@@ -21,5 +21,6 @@ extern float cumEnergy[CUM_CHANNELS];   // kWh
 void initCumulativeEnergy();     // load saved totals. Call once in setup().
 void updateCumulativeEnergy();   // call after every decoded STM metering frame.
 void saveCumulativeEnergy();     // write totals to flash now (e.g. before a reboot).
+void resetCumulativeEnergy();    // set all totals to 0 and save; counting restarts from zero.
 
 #endif // CUMULATIVE_ENERGY_H

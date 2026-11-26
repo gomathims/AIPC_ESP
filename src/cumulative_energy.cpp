@@ -34,6 +34,13 @@ void saveCumulativeEnergy() {
     lastWriteMs = millis();
 }
 
+void resetCumulativeEnergy() {
+    // Zero the totals. The baseline (preCumEnergy) is kept, so counting restarts
+    // from 0 using the STM's current energy counters as the new starting point.
+    for (int i = 0; i < CUM_CHANNELS; i++) cumEnergy[i] = 0.0f;
+    saveCumulativeEnergy();
+}
+
 void updateCumulativeEnergy() {
     const float now[CUM_CHANNELS] = {eneL1, eneL2, eneL3, eneL4};
 

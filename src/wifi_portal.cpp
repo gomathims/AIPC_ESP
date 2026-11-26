@@ -210,7 +210,7 @@ static void handleStaticRequest() {
     if (path.startsWith("/")) path = path.substring(1);
 
     // Dashboard + log require login; everything else is public so login can render.
-    if ((path == "index.html" || path == "log.html" || path == "rawevent.html") && !isAuthed()) {
+    if ((path == "index.html" || path == "log.html") && !isAuthed()) {
         path = "login.html";
     }
 
@@ -265,6 +265,7 @@ String portalReadingsJson() {
     doc["stmTime"] = getStmTimeString();
     doc["timeSynced"] = timeSynced;
     doc["relayStatus"] = relayStatus;
+    doc["al"] = stmAlarm;   // overload / over-power alarm bits (meter_state.h)
 
     String out;
     serializeJson(doc, out);
@@ -392,6 +393,15 @@ static void onClearLogs() {
     if (!verifyDevicePin(doc["authPin"] | "")) { server.send(403, "text/plain", "Incorrect PIN"); return; }
     clearEventLog();
     server.send(200, "text/plain", "Logs cleared.");
+}
+
+static void onResetEnergy() {
+    if (!requireAuth()) return;
+    JsonDocument doc; if (!readJsonBody(doc)) return;
+    if (!verifyDevicePin(doc["authPin"] | "")) { server.send(403, "text/plain", "Incorrect PIN"); return; }
+    resetCumulativeEnergy();
+    wsPushReadingsNow();   // show the zeroed totals on the dashboard straight away
+    server.send(200, "text/plain", "Cumulative energy reset to 0.");
 }
 
 static void onSetProtection() {
@@ -536,6 +546,13 @@ static void registerRoutes() {
     // deviceName stays: the login page needs it before a session exists.
     server.on("/api/getLogs", HTTP_GET, []() {
         if (!requireAuth()) return;
+        // ?page=N[&size=50] -> one page (log.html). No page arg -> newest 150 (home tab).
+        if (server.hasArg("page")) {
+            uint32_t page = (uint32_t)server.arg("page").toInt();
+            uint32_t size = server.hasArg("size") ? (uint32_t)server.arg("size").toInt() : 50;
+            server.send(200, "application/json", getLogsPageJson(page, size));
+            return;
+        }
         server.send(200, "application/json", getLogsJson());
     });
     server.on("/api/getProtection", HTTP_GET, []() {
@@ -548,6 +565,7 @@ static void registerRoutes() {
     server.on("/api/scanNetworks", HTTP_GET, onScanNetworks);
     server.on("/api/clearLogs", HTTP_POST, onClearLogs);
     server.on("/api/setProtection", HTTP_POST, onSetProtection);
+    server.on("/api/resetEnergy", HTTP_POST, onResetEnergy);
     server.on("/api/connectCloud", HTTP_POST, onConnectCloud);
     server.on("/api/pauseCloud", HTTP_POST, onPauseCloud);
     server.on("/api/login", HTTP_POST, onLogin);

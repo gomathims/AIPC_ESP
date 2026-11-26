@@ -1,51 +1,43 @@
 #include "ws_events.h"
 
 #include <WebSocketsServer.h>
-#include <ArduinoJson.h>
 
 #include "wifi_portal.h"
 #include "meter_state.h"
 #include "cloud_mqtt.h"
 
-#define WS_PORT          81
-#define WS_UART_BUF_SIZE 256     // max bytes per raw broadcast event
-#define WS_UART_IDLE_MS  10UL    // gap that ends a UART burst (~115 bytes at 115200)
+#define WS_PORT 81
 
 // Live push cadence.
-#define WS_READINGS_PERIOD_MS 3000UL  // readings every 3 s; a relay change is sent at once
+#define WS_READINGS_PERIOD_MS 3000UL  // readings every 3 s; a relay / alarm change is sent at once
 #define WS_WIFI_CHECK_MS    3000UL    // WiFi status: pushed only when it changed
 #define WS_CLOUD_CHECK_MS   2000UL    // cloud status: pushed only when it changed
 #define WS_AUTH_CHECK_MS   30000UL    // re-validate each client's session
 
 static WebSocketsServer ws(WS_PORT);
 
-// Per-client state. "/raw" clients get the raw UART stream (rawevent.html);
-// every other URL ("/live") gets the live dashboard data.
+// Per-client state: slot in use + the login session it connected with.
 struct WsClient {
     bool used;
-    bool raw;
     uint32_t sid;
 };
 static WsClient clients[WEBSOCKETS_SERVER_CLIENT_MAX];
-static uint8_t liveCount = 0, rawCount = 0;
-
-static uint8_t uartBuf[WS_UART_BUF_SIZE];
-static size_t uartLen = 0;
-static unsigned long uartLastByte = 0;
+static uint8_t liveCount = 0;
 
 static unsigned long lastReadings = 0, lastWifiCheck = 0,
                      lastCloudCheck = 0, lastAuthCheck = 0;
 static uint16_t lastRelaySent = 0;   // relayStatus in the last readings push
+static uint8_t lastAlarmSent = 0;    // stmAlarm in the last readings push
+static bool forceReadings = false;   // set by wsPushReadingsNow()
 static String lastWifiJson, lastCloudJson;
 
 // ----------------------------------------------------------------------------
 // helpers
 // ----------------------------------------------------------------------------
 static void recount() {
-    liveCount = rawCount = 0;
+    liveCount = 0;
     for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) {
-        if (!clients[i].used) continue;
-        if (clients[i].raw) rawCount++; else liveCount++;
+        if (clients[i].used) liveCount++;
     }
 }
 
@@ -63,13 +55,7 @@ static String typed(const char *t, const String &obj) {
 
 static void sendLive(String &msg) {
     for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) {
-        if (clients[i].used && !clients[i].raw) ws.sendTXT(i, msg);
-    }
-}
-
-static void sendRaw(String &msg) {
-    for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) {
-        if (clients[i].used && clients[i].raw) ws.sendTXT(i, msg);
+        if (clients[i].used) ws.sendTXT(i, msg);
     }
 }
 
@@ -90,68 +76,23 @@ static void onWsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t lengt
     if (num >= WEBSOCKETS_SERVER_CLIENT_MAX) return;
 
     if (type == WStype_CONNECTED) {
-        String url((const char *)payload);   // e.g. "/live?sid=123456"
-        uint32_t sid = sidFromUrl(url.c_str());
+        uint32_t sid = sidFromUrl((const char *)payload);   // e.g. "/live?sid=123456"
         if (!portalSessionValid(sid)) {
             ws.sendTXT(num, "{\"type\":\"auth\",\"ok\":false}");
             ws.disconnect(num);
             return;
         }
         clients[num].used = true;
-        clients[num].raw = url.startsWith("/raw");
         clients[num].sid = sid;
         recount();
-        if (clients[num].raw) ws.sendTXT(num, "{\"info\":\"connected\"}");
-        else sendSnapshot(num);
+        sendSnapshot(num);
     } else if (type == WStype_DISCONNECTED) {
         clients[num].used = false;
         recount();
     }
 }
 
-// ----------------------------------------------------------------------------
-// raw UART stream (rawevent.html)
-// ----------------------------------------------------------------------------
-static void flushUartBurst() {
-    if (uartLen == 0) return;
-
-    static const char HEX_CHARS[] = "0123456789abcdef";
-    String hex;
-    hex.reserve(uartLen * 2);
-    for (size_t i = 0; i < uartLen; i++) {
-        hex += HEX_CHARS[uartBuf[i] >> 4];
-        hex += HEX_CHARS[uartBuf[i] & 0x0F];
-    }
-
-    JsonDocument out;
-    out["t"] = millis();
-    out["len"] = uartLen;
-    out["hex"] = hex;
-
-    JsonDocument parsed;
-    DeserializationError err = deserializeJson(parsed, (const char *)uartBuf, uartLen);
-    if (err) {
-        out["err"] = err.c_str();
-    } else if (!parsed.is<JsonObject>()) {
-        out["err"] = "Not a JSON object";
-    } else {
-        out["json"] = parsed.as<JsonObjectConst>();
-    }
-
-    String msg;
-    serializeJson(out, msg);
-    sendRaw(msg);
-    uartLen = 0;
-}
-
-void wsTapUart(const uint8_t *data, size_t len) {
-    if (rawCount == 0) return;   // nobody watching the raw stream; skip the work
-    for (size_t i = 0; i < len; i++) {
-        if (uartLen >= WS_UART_BUF_SIZE) flushUartBurst();
-        uartBuf[uartLen++] = data[i];
-    }
-    uartLastByte = millis();
-}
+void wsPushReadingsNow() { forceReadings = true; }
 
 // ----------------------------------------------------------------------------
 void initWsEvents() {
@@ -164,16 +105,19 @@ void initWsEvents() {
 
 void serviceWsEvents() {
     ws.loop();
-    if (uartLen && (millis() - uartLastByte >= WS_UART_IDLE_MS)) flushUartBurst();
 
     if (liveCount == 0) return;
     unsigned long now = millis();
 
-    // Live readings: immediately when the relay state changes, otherwise once every 3 s.
+    // Live readings: immediately when the relay state or an alarm changes, otherwise every 3 s.
     uint16_t rs = relayStatus;
-    if (rs != lastRelaySent || now - lastReadings >= WS_READINGS_PERIOD_MS) {
+    uint8_t al = stmAlarm;
+    if (forceReadings || rs != lastRelaySent || al != lastAlarmSent ||
+        now - lastReadings >= WS_READINGS_PERIOD_MS) {
+        forceReadings = false;
         lastReadings = now;
         lastRelaySent = rs;
+        lastAlarmSent = al;
         String m = typed("readings", portalReadingsJson());
         sendLive(m);
     }

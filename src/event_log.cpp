@@ -182,6 +182,54 @@ String getLogsJson() {
     return out;
 }
 
+// One page of the log, newest first. page 0 = the newest `size` records.
+// Only that page is read from flash, so RAM use stays small with thousands of logs.
+String getLogsPageJson(uint32_t page, uint32_t size) {
+    if (size == 0) size = 50;
+    if (size > 100) size = 100;
+
+    JsonDocument doc;
+    JsonArray arr = doc["logs"].to<JsonArray>();
+    uint32_t cnt = 0;
+
+    if (fsReady) {
+        File f = LittleFS.open(LOG_PATH, "r");
+        if (f) {
+            cnt = f.size() / sizeof(LogRec);
+            uint32_t pages = cnt ? (cnt + size - 1) / size : 1;
+            if (page >= pages) page = pages - 1;
+
+            // Newest-first positions [first, last) map to file records [cnt-last, cnt-first).
+            uint32_t first = page * size;
+            uint32_t last = first + size;
+            if (last > cnt) last = cnt;
+            if (first < last) {
+                uint32_t n = last - first;
+                LogRec recs[100];
+                f.seek((cnt - last) * sizeof(LogRec));
+                uint32_t got = 0;
+                while (got < n && f.read((uint8_t *)&recs[got], sizeof(LogRec)) == sizeof(LogRec)) got++;
+                for (int i = (int)got - 1; i >= 0; i--) {
+                    JsonObject o = arr.add<JsonObject>();
+                    o["ts"] = recs[i].ts;
+                    o["ev"] = recs[i].ev;
+                    o["rc"] = recs[i].aux;
+                }
+            }
+            f.close();
+        }
+    }
+
+    doc["total"] = cnt;
+    doc["page"] = page;
+    doc["size"] = size;
+    doc["pages"] = cnt ? (cnt + size - 1) / size : 1;
+
+    String out;
+    serializeJson(doc, out);
+    return out;
+}
+
 bool clearEventLog() {
     if (!fsReady) return false;
     LittleFS.remove(LOG_PATH);

@@ -22,14 +22,22 @@
     <div class="page" style="margin-top:6.5rem;">
       <div class="padding-outer">
         <a href="/" style="font-size:.8rem; color:#1565c0; text-decoration:none;">‹ Back</a>
-        <a href="rawevent.html" style="font-size:.8rem; color:#1565c0; text-decoration:none; float:right;">Raw UART ›</a>
         <h4 class="main-heading" style="float:left;">Event Log</h4>
         <div style="float:right;">
           <input type="button" class="cn button" value="Clear" onclick="clearLogs()" style="margin-right:6px;" />
           <input type="button" class="cn button" value="Refresh" onclick="loadLogs()" />
         </div>
         <br clear="all" />
-        <div id="logContent" class="cn" style="margin-top:12px; font-size:.82rem;">Loading…</div>
+        <style>
+          .pager { display:flex; align-items:center; justify-content:center; gap:4px; margin:10px 0; flex-wrap:wrap; }
+          .pager button { border:1px solid #cfd8dc; background:#fff; color:#1565c0; border-radius:6px;
+                          padding:4px 9px; font-size:.78rem; cursor:pointer; }
+          .pager button:disabled { color:#bbb; cursor:default; }
+          .pager .pi { font-size:.78rem; color:#555; margin:0 6px; white-space:nowrap; }
+        </style>
+        <div class="pager" id="pagerTop"></div>
+        <div id="logContent" class="cn" style="font-size:.82rem;">Loading…</div>
+        <div class="pager" id="pagerBottom"></div>
         <p id="logMsg" class="cn" style="min-height:16px;"></p>
       </div>
     </div>
@@ -65,17 +73,49 @@
 
     function guard(r) { if (r.status === 401) { window.location.href = "/"; throw new Error("unauth"); } return r; }
 
-    // ---- event log over the HTTP API ----
+    // ---- event log over the HTTP API, 50 logs per page (page 0 = newest) ----
+    var PAGE_SIZE = 50;
     var logs = [];
+    var page = 0, pages = 1, total = 0;
     var logBusy = false;
     function loadLogs() {
       if (logBusy) return;
       logBusy = true;
-      fetch("/api/getLogs").then(guard)
+      fetch("/api/getLogs?page=" + page + "&size=" + PAGE_SIZE).then(guard)
         .then(function (r) { return r.json(); })
-        .then(function (res) { logs = res.logs || []; renderLogs(); })
+        .then(function (res) {
+          logs = res.logs || [];
+          page = Number(res.page) || 0;
+          pages = Math.max(1, Number(res.pages) || 1);
+          total = Number(res.total) || 0;
+          renderLogs();
+          renderPager();
+        })
         .catch(function () { document.getElementById("logContent").textContent = "Couldn't load logs."; })
         .then(function () { logBusy = false; });
+    }
+
+    function goPage(p) {
+      if (p < 0 || p >= pages || p === page) return;
+      page = p;
+      loadLogs();
+      window.scrollTo(0, 0);
+    }
+
+    function renderPager() {
+      var html = "";
+      if (total > 0) {
+        var from = page * PAGE_SIZE + 1, to = Math.min(total, (page + 1) * PAGE_SIZE);
+        var first = page === 0 ? " disabled" : "", lastDis = page >= pages - 1 ? " disabled" : "";
+        html = '<button onclick="goPage(0)"' + first + '>« First</button>' +
+               '<button onclick="goPage(page-1)"' + first + '>‹ Prev</button>' +
+               '<span class="pi">Page ' + (page + 1) + ' of ' + pages + '<br>' +
+               from + '–' + to + ' of ' + total + ' logs</span>' +
+               '<button onclick="goPage(page+1)"' + lastDis + '>Next ›</button>' +
+               '<button onclick="goPage(pages-1)"' + lastDis + '>Last »</button>';
+      }
+      document.getElementById("pagerTop").innerHTML = html;
+      document.getElementById("pagerBottom").innerHTML = html;
     }
 
     function renderLogs() {
@@ -113,7 +153,7 @@
         .then(function (r) { return r.text().then(function (t) {
           var m = document.getElementById("logMsg");
           m.textContent = t; m.style.color = r.ok ? "#2e7d32" : "#d32f2f";
-          if (r.ok) loadLogs();
+          if (r.ok) { page = 0; loadLogs(); }
         }); })
         .catch(function () { document.getElementById("logMsg").textContent = "Request failed."; });
     }
@@ -124,7 +164,9 @@
 
     window.addEventListener("load", function () {
       loadLogs();
-      setInterval(loadLogs, 5000);
+      // Auto-refresh only on page 1 (newest). On older pages new logs would shift the
+      // rows while you read; use Refresh there instead.
+      setInterval(function () { if (page === 0) loadLogs(); }, 5000);
     });
   </script>
 </body>

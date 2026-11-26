@@ -73,6 +73,12 @@
               .flow-svg .fl-rv { font-size:14px; font-weight:700; fill:#222; }
               .flow-svg .fl-unit { font-size:9px; fill:#999; }
               .flow-svg .fl-badge { font-size:7px; font-weight:700; fill:#fff; }
+              /* Overload / over-power alarm (readings "al" bits): red banner over the box header */
+              .flow-svg .alm rect { fill:#d32f2f; }
+              .flow-svg .alm text { font-size:9px; font-weight:700; fill:#fff; }
+              .flow-svg .alm { animation:almBlink 1s step-start infinite; }
+              .flow-svg .bx.alarm { stroke:#d32f2f; stroke-width:2.5; }
+              @keyframes almBlink { 50% { opacity:.35; } }
               .total-row { margin-top:2px; padding-top:2px; border-top:1px solid #eee;
                            display:flex; justify-content:space-around; text-align:center; }
               .total-row .tl { font-size:.56rem; color:#888; display:block; margin-bottom:1px; }
@@ -103,9 +109,6 @@
             </style>
 
             <div class="home-top-row">
-              <div class="battery-chip" id="batteryChip" title="Battery voltage">
-                <span class="bl">Battery =</span><b class="bv" id="battV">0.0</b><span class="bu">/ 3.3 V</span>
-              </div>
               <div id="systemTime" style="flex:1; text-align:center; font-size:.78rem; color:#777;">—</div>            </div>
 
             <svg class="flow-svg" viewBox="0 0 400 269" role="img" aria-label="Power flow: supply lines to outputs">
@@ -116,8 +119,9 @@
                 <marker id="ah3" viewBox="0 0 8 8" refX="0" refY="4" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2e7d32"/></marker>
               </defs>
               <!-- Supply boxes (L1 L2 L3 Inverter) with all readings, plus a tap line + bar below -->
-              <rect x="6" y="4" width="88" height="172" rx="7" fill="#ffebee" stroke="#ef9a9a"/>
+              <rect id="bx1" class="bx" x="6" y="4" width="88" height="172" rx="7" fill="#ffebee" stroke="#ef9a9a"/>
               <text x="50" y="20" class="fl-name" fill="#c62828">L1</text>
+              <g id="al1" class="alm off"><rect x="10" y="8" width="80" height="17" rx="4"/><text x="50" y="20">L1 OVERLOAD</text></g>
               <text x="50" y="36" class="fl-lbl">Voltage</text>
               <text x="50" y="51"><tspan class="fl-rv" id="v1">0</tspan><tspan class="fl-unit"> V</tspan></text>
               <text x="50" y="66" class="fl-lbl">Current</text>
@@ -130,8 +134,9 @@
               <text x="50" y="171"><tspan class="fl-rv" id="c1">0</tspan><tspan class="fl-unit"> kWh</tspan></text>
               <line x1="50" y1="176" x2="50" y2="182" stroke="#c62828" stroke-width="3"/>
               <line x1="16" y1="182" x2="84" y2="182" stroke="#c62828" stroke-width="3" stroke-linecap="round"/>
-              <rect x="106" y="4" width="88" height="172" rx="7" fill="#fffde7" stroke="#ffe082"/>
+              <rect id="bx2" class="bx" x="106" y="4" width="88" height="172" rx="7" fill="#fffde7" stroke="#ffe082"/>
               <text x="150" y="20" class="fl-name" fill="#f57f17">L2</text>
+              <g id="al2" class="alm off"><rect x="110" y="8" width="80" height="17" rx="4"/><text x="150" y="20">L2 OVERLOAD</text></g>
               <text x="150" y="36" class="fl-lbl">Voltage</text>
               <text x="150" y="51"><tspan class="fl-rv" id="v2">0</tspan><tspan class="fl-unit"> V</tspan></text>
               <text x="150" y="66" class="fl-lbl">Current</text>
@@ -144,8 +149,9 @@
               <text x="150" y="171"><tspan class="fl-rv" id="c2">0</tspan><tspan class="fl-unit"> kWh</tspan></text>
               <line x1="150" y1="176" x2="150" y2="182" stroke="#f57f17" stroke-width="3"/>
               <line x1="116" y1="182" x2="184" y2="182" stroke="#f57f17" stroke-width="3" stroke-linecap="round"/>
-              <rect x="206" y="4" width="88" height="172" rx="7" fill="#e3f2fd" stroke="#90caf9"/>
+              <rect id="bx3" class="bx" x="206" y="4" width="88" height="172" rx="7" fill="#e3f2fd" stroke="#90caf9"/>
               <text x="250" y="20" class="fl-name" fill="#1565c0">L3</text>
+              <g id="al3" class="alm off"><rect x="210" y="8" width="80" height="17" rx="4"/><text x="250" y="20">L3 OVERLOAD</text></g>
               <text x="250" y="36" class="fl-lbl">Voltage</text>
               <text x="250" y="51"><tspan class="fl-rv" id="v3">0</tspan><tspan class="fl-unit"> V</tspan></text>
               <text x="250" y="66" class="fl-lbl">Current</text>
@@ -158,8 +164,9 @@
               <text x="250" y="171"><tspan class="fl-rv" id="c3">0</tspan><tspan class="fl-unit"> kWh</tspan></text>
               <line x1="250" y1="176" x2="250" y2="182" stroke="#1565c0" stroke-width="3"/>
               <line x1="216" y1="182" x2="284" y2="182" stroke="#1565c0" stroke-width="3" stroke-linecap="round"/>
-              <rect x="306" y="4" width="88" height="172" rx="7" fill="#e8f5e9" stroke="#a5d6a7"/>
+              <rect id="bx4" class="bx" x="306" y="4" width="88" height="172" rx="7" fill="#e8f5e9" stroke="#a5d6a7"/>
               <text x="350" y="20" class="fl-name" fill="#2e7d32">Inverter</text>
+              <g id="al4" class="alm off"><rect x="310" y="8" width="80" height="17" rx="4"/><text x="350" y="20" id="al4t">INV OVERLOAD</text></g>
               <text x="350" y="36" class="fl-lbl">Voltage</text>
               <text x="350" y="51"><tspan class="fl-rv" id="v4">0</tspan><tspan class="fl-unit"> V</tspan></text>
               <text x="350" y="66" class="fl-lbl">Current</text>
@@ -217,7 +224,7 @@
             </div>
 
             <!-- Contactor Status CF1..CF7 (STM frame byte 58, bit0 = CF1) -->
-            <div class="cf-row">
+            <!-- <div class="cf-row">
               <div class="cf-title">Contactor Status</div>
               <div class="cf-grid">
                 <div class="cf-chip" id="cf1"><span class="cn">R</span><span class="cs">OFF</span></div>
@@ -228,7 +235,7 @@
                 <div class="cf-chip" id="cf6"><span class="cn">B<span class="arw"><i>&rarr;</i><i>&larr;</i></span>R</span><span class="cs">OFF</span></div>
                 <div class="cf-chip" id="cf7"><span class="cn">INV</span><span class="cs">OFF</span></div>
               </div>
-            </div>
+            </div> -->
 
             <!-- Recent events (preview; full log on log.html) -->
             <div style="margin-top:4px; border-top:1px solid #eee; padding-top:4px;">
@@ -314,6 +321,21 @@
             <div class="collapsible-section i-c-c gap-flex cn pd2">
               <div class="hc pr"><h4 class="sh">Device Time</h4></div>
               <p class="cn" style="margin:10px 1px 10px 20px;"><span id="rtcTime"></span></p>
+            </div>
+
+            <!-- RTC coin battery voltage (STM frame, readings "batt") -->
+            <div class="collapsible-section i-c-c gap-flex cn pd2">
+              <div class="hc pr">
+                <h4 class="sh">Coin Battery Voltage</h4>
+                <span class="hi" tabindex="0">i</span>
+                <span class="ht">Voltage of the RTC coin cell that keeps the device time when power is off.
+                  Shown in red below 1.5 V: replace the battery.</span>
+              </div>
+              <p class="cn" style="margin:10px 1px 10px 20px;">
+                <span class="battery-chip" id="batteryChip" title="Coin battery voltage">
+                  <b class="bv" id="battV">0.0</b><span class="bu">/ 3.3 V</span>
+                </span>
+              </p>
             </div>
 
             <!-- WiFi settings + scan -->
@@ -465,6 +487,18 @@
                        onclick="stm32Apply()" />
               </div>
               <p id="stmOtaMsg" class="cn" style="min-height:16px;"></p>
+            </div>
+
+            <!-- Reset cumulative energy -->
+            <div class="collapsible-section i-c-c gap-flex cn pd2">
+              <div class="hc pr">
+                <h4 class="sh">Reset Cumulative Energy</h4>
+                <span class="hi" tabindex="0">i</span>
+                <span class="ht">Sets the cumulative energy of L1, L2, L3 and Inverter to 0 kWh.
+                  Counting starts again from zero. This cannot be undone.</span>
+              </div>
+              <div><input type="button" class="cn button" value="Reset Energy" onclick="resetEnergy()" /></div>
+              <p id="energyMsg" class="cn" style="min-height:16px;"></p>
             </div>
 
             <!-- Logout -->

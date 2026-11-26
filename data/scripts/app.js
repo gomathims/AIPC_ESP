@@ -65,6 +65,8 @@ function applyReadings(d) {
   // Power-flow arrows (relayStatus bits 0-9) and the UPS aux badge (bit 10).
   drawFlows(Number(d.relayStatus) || 0);
 
+  drawAlarms(Number(d.al) || 0);
+
   // Contactor feedback: d.cf bit0 = CF1 ... bit6 = CF7 (1 = ON).
   var cf = Number(d.cf) || 0;
   for (var c = 0; c < 7; c++) {
@@ -74,6 +76,29 @@ function applyReadings(d) {
     chip.classList.toggle("on", !!on);
     chip.querySelector(".cs").textContent = on ? "ON" : "OFF";
   }
+}
+
+// ---------- overload / over-power alarms (Home tab SVG) ----------
+// d.al bits (STM event flag bits 11..15): 0 R overload, 1 Y overload, 2 B overload,
+// 3 Inverter overload, 4 Inverter (UPS) over power. A red blinking banner covers the
+// box header while the alarm is present. The STM event is also written to the event
+// log, so Recent Events is refreshed as soon as an alarm starts or clears.
+var lastAlarm = -1;
+function drawAlarms(al) {
+  for (var k = 0; k < 4; k++) {
+    var on = k < 3 ? (al >> k) & 1 : (al >> 3) & 3;   // inverter: overload or over power
+    var g = $("al" + (k + 1)), bx = $("bx" + (k + 1));
+    if (g) g.classList.toggle("off", !on);
+    if (bx) bx.classList.toggle("alarm", !!on);
+  }
+  var t = $("al4t");
+  if (t) {
+    var ol = (al >> 3) & 1, op = (al >> 4) & 1;
+    t.textContent = ol && op ? "OVERLOAD + OVER PWR" : op ? "INV OVER POWER" : "INV OVERLOAD";
+    t.style.fontSize = (ol && op) ? "7px" : "";
+  }
+  if (lastAlarm !== -1 && al !== lastAlarm && typeof loadHomeLog === "function") loadHomeLog();
+  lastAlarm = al;
 }
 
 // ---------- power-flow arrows (Home tab SVG) ----------
@@ -183,7 +208,7 @@ function applyWiFiStatus(s) {
 
   if (s.mode === "WIFI") {
     var sig = s.rssi >= -60 ? "Strong" : (s.rssi >= -75 ? "Good" : "Weak");
-    $("connectionDetails").textContent = "Connected to \"" + s.ssid + "\" (signal: " + sig + ").";
+    $("connectionDetails").textContent = "Connected to \"" + s.ssid + "\" (signal: " + sig + ", " + s.rssi + " dBm).";
     $("wiFiDetails").textContent = "Open this page at  http://" + s.mdns + "  or  http://" + s.ip;
   } else {
     $("connectionDetails").textContent = "Running in Access Point mode (" + s.ssid + ").";
@@ -256,6 +281,10 @@ function disconnectWifi() {
   postWithPin("/api/disableWiFi", {}, "wifiMsg", "Disconnected.", function () {
     $("ssid").value = "";
   });
+}
+function resetEnergy() {
+  if (!confirm("Reset the cumulative energy of all phases to 0? This cannot be undone.")) return;
+  postWithPin("/api/resetEnergy", {}, "energyMsg", "Cumulative energy reset to 0.");
 }
 function logout() {
   var pin = window.prompt("Enter your device PIN to log out:");

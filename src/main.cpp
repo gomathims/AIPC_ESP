@@ -12,7 +12,7 @@
 #include "time_util.h"
 #include "ws_events.h"
 #include "cumulative_energy.h"
-// #include "tft_display.h"
+#include "tft_display.h"
 
 
 // STM32 front-end frame calibration (unchanged from the original bring-up code).
@@ -47,10 +47,10 @@
 #define YEAR2020 1577836800
 
 // ---- Live metering state (declared extern in meter_state.h) ----------------
-volatile float voltL1 = 0, curL1 = 0, powL1 = 0, eneL1 = 0;
-volatile float voltL2 = 0, curL2 = 0, powL2 = 0, eneL2 = 0;
-volatile float voltL3 = 0, curL3 = 0, powL3 = 0, eneL3 = 0;
-volatile float voltL4 = 0, curL4 = 0, powL4 = 0, eneL4 = 0;
+ float voltL1 = 0, curL1 = 0, powL1 = 0, eneL1 = 0;
+ float voltL2 = 0, curL2 = 0, powL2 = 0, eneL2 = 0;
+ float voltL3 = 0, curL3 = 0, powL3 = 0, eneL3 = 0;
+ float voltL4 = 0, curL4 = 0, powL4 = 0, eneL4 = 0;
 volatile bool meterDataValid = false;
 volatile unsigned long meterLastUpdate = 0;
 volatile uint16 relayStatus;
@@ -81,6 +81,9 @@ uint8_t eventWriteIndex = -1;
 // (1 = ON / overload present, 0 = OFF / cleared). Bit 12: one-shot "STM32 restarted" pulse.
 static uint32_t lastStmEventFlag = 0;
 
+// Active protection alarms, from event-flag bits 11..15 (see meter_state.h).
+volatile uint8_t stmAlarm = 0;
+
 float bateryVoltag;
 uint32_t temp;
 time_t curTime;
@@ -90,7 +93,7 @@ time_t curTime;
 
 
 // STM metering payload after "STM\0": 60 bytes (STM transmit[60]); [58] = contactor feedback bits.
-static uint8_t rxDataV1[60];
+static uint8_t rxDataV1[75];
 uint8_t contactorStatus = 0;   // bit0 = CF1 ... bit6 = CF7 (1 = feedback active)
 
 
@@ -195,6 +198,7 @@ static void processStmEvent(const event &e) {
     }
 
     lastStmEventFlag = flag;
+    stmAlarm = (uint8_t)((flag >> 11) & 0x1F);   // overload R/Y/B/INV + INV over power
 }
 
 static void uartCollection() {
@@ -203,7 +207,6 @@ static void uartCollection() {
         if (Serial.peek() != 'S') { 
             if(Serial.peek() == 0xEE){
                 size_t n = Serial.readBytes(structTemp,sizeof(structTemp));
-                wsTapUart(structTemp, n);
                 eventWriteIndex++;
                 if(eventWriteIndex >= 20){
                     eventWriteIndex = 0;
@@ -215,13 +218,11 @@ static void uartCollection() {
             }
             
             uint8_t dropped = Serial.read();
-            wsTapUart(&dropped, 1);
             continue; 
         }
 
         char ver[4];
         size_t n = Serial.readBytes(ver, 4);
-        wsTapUart((const uint8_t *)ver, n);
         ver[3] = '\0';
         if (strcmp(ver, "STM") != 0) {
             // Marker didn't line up; the 4 bytes are already consumed, resync next pass.
@@ -229,67 +230,34 @@ static void uartCollection() {
         }
 
         n = Serial.readBytes(rxDataV1, sizeof(rxDataV1));
-        wsTapUart(rxDataV1, n);
-        voltL1 = ((rxDataV1[0] << 16 | rxDataV1[1]  << 8 | rxDataV1[2]) / CALIB_VOL1);
-        voltL2 = ((rxDataV1[3] << 16 | rxDataV1[4]  << 8 | rxDataV1[5]) / CALIB_VOL2);
-        voltL3 = ((rxDataV1[6] << 16 | rxDataV1[7]  << 8 | rxDataV1[8]) / CALIB_VOL3);
-        voltL4 = ((rxDataV1[9] << 16 | rxDataV1[10] << 8 | rxDataV1[11]) / CALIB_VOL4);
-        curL1 = ((rxDataV1[12] << 16 | rxDataV1[13] << 8 | rxDataV1[14]) / CALIB_CUR1);
-        curL2 = ((rxDataV1[15] << 16 | rxDataV1[16] << 8 | rxDataV1[17]) / CALIB_CUR2);
-        curL3 = ((rxDataV1[18] << 16 | rxDataV1[19] << 8 | rxDataV1[20]) / CALIB_CUR3);
-        curL4 = ((rxDataV1[21] << 16 | rxDataV1[22] << 8 | rxDataV1[23]) / CALIB_CUR4);
-        powL1 = ((rxDataV1[24] << 16 | rxDataV1[25] << 8 | rxDataV1[26]) / CALIB_POW1);
-        powL2 = ((rxDataV1[27] << 16 | rxDataV1[28] << 8 | rxDataV1[29]) / CALIB_POW2);
-        powL3 = ((rxDataV1[30] << 16 | rxDataV1[31] << 8 | rxDataV1[32]) / CALIB_POW3);
-        powL4 = ((rxDataV1[33] << 16 | rxDataV1[34] << 8 | rxDataV1[35]) / CALIB_POW4);
-        eneL1 = ((rxDataV1[36] << 16 | rxDataV1[37] << 8 | rxDataV1[38]) / CALIB_ENE1);
-        eneL2 = ((rxDataV1[39] << 16 | rxDataV1[40] << 8 | rxDataV1[41]) / CALIB_ENE2);
-        eneL3 = ((rxDataV1[42] << 16 | rxDataV1[43] << 8 | rxDataV1[44]) / CALIB_ENE3);
-        eneL4 = ((rxDataV1[45] << 16 | rxDataV1[46] << 8 | rxDataV1[47]) / CALIB_ENE4);
-        relayStatus = ((rxDataV1[49] << 8 | rxDataV1[48]));
-        memcpy(&bateryVoltag,&rxDataV1[50],sizeof(bateryVoltag));
+        
+        memcpy(&voltL1, &rxDataV1,4);
+        memcpy(&voltL2, &rxDataV1[4],4);
+        memcpy(&voltL3, &rxDataV1[8],4);
+        memcpy(&voltL4, &rxDataV1[12],4);
+        memcpy(&curL1, &rxDataV1[16],4);
+        memcpy(&curL2, &rxDataV1[20],4);
+        memcpy(&curL3, &rxDataV1[24],4);
+        memcpy(&curL4, &rxDataV1[28],4);
+        memcpy(&powL1, &rxDataV1[32],4);
+        memcpy(&powL2, &rxDataV1[36],4);
+        memcpy(&powL3, &rxDataV1[40],4);
+        memcpy(&powL4, &rxDataV1[44],4);
+        memcpy(&eneL1, &rxDataV1[48],4);
+        memcpy(&eneL2, &rxDataV1[52],4);
+        memcpy(&eneL3, &rxDataV1[56],4);
+        memcpy(&eneL4, &rxDataV1[60],4);
+        relayStatus = ((rxDataV1[65] << 8 | rxDataV1[64]));
+        memcpy(&bateryVoltag,&rxDataV1[66],sizeof(bateryVoltag));
         // STM RTC epoch is 4 bytes at [42..45]. time_t is 8 bytes on the ESP8266 core,
         // so copy into a uint32_t first (copying sizeof(time_t) would read past the buffer).
         uint32_t stmEpoch;
-        memcpy(&stmEpoch, &rxDataV1[54], sizeof(stmEpoch));
+        memcpy(&stmEpoch, &rxDataV1[70], sizeof(stmEpoch));
         curTime = (time_t)stmEpoch;
-        contactorStatus = rxDataV1[58];   // CF1..CF7 feedback bits ([59] unused)
+        contactorStatus = rxDataV1[74];   // CF1..CF7 feedback bits ([59] unused)
 
         // Serial.printf("The voltage is %.2f\r\n",bateryVoltag);
 
-    if (voltL1 <= 1) {
-			voltL1 = 0;
-		}
-
-		if (voltL2 <= 1) {
-			voltL2 = 0;
-		}
-
-		if (voltL3 <= 1) {
-			voltL3 = 0;
-		}
-		
-		if (voltL4 <= 1) {
-			voltL4 = 0;
-		}
-
-		if (curL1 < 0.03) {
-			curL1 = 0;
-			powL1 = 0;
-		}
-		if (curL2 < 0.03) {
-			curL2 = 0;
-			powL2 = 0;
-		}
-		if (curL3 < 0.03) {
-			curL3 = 0;
-			powL3 = 0;
-		}
-		if(curL4 < 0.03){
-			curL4 = 0;
-			powL4 = 0;
-		}
-        // Serial.printf("volt =%f\nrelay status  %x\n",voltL1,relayStatus);
        
         meterDataValid = true;
         meterLastUpdate = millis();
@@ -306,71 +274,6 @@ static void uartCollection() {
     
 }
 
-
-
-
-
-
-
-
-
-
-
-// static void uartCollection() {
-//     while (Serial.available() >= 42) {
-//         // Peek the 4-byte marker without over-consuming on mismatch.
-//         if (Serial.peek() != 'S') { Serial.read(); continue; }
-
-//         char ver[4];
-//         Serial.readBytes(ver, 4);
-//         ver[3] = '\0';
-//         if (strcmp(ver, "STM") != 0) {
-//             // Marker didn't line up; the 4 bytes are already consumed, resync next pass.
-//             continue;
-//         }
-
-//         Serial.readBytes(rxDataV1, sizeof(rxDataV1));
-//         voltL1 = ((rxDataV1[0] << 16 | rxDataV1[1]  << 8 | rxDataV1[2]) / CALIB_VOL1);
-//         voltL2 = ((rxDataV1[3] << 16 | rxDataV1[4]  << 8 | rxDataV1[5]) / CALIB_VOL2);
-//         voltL3 = ((rxDataV1[6] << 16 | rxDataV1[7]  << 8 | rxDataV1[8]) / CALIB_VOL3);
-//         curL1 = ((rxDataV1[9]  << 16 | rxDataV1[10] << 8 | rxDataV1[11]) / CALIB_CUR1);
-//         curL2 = ((rxDataV1[12] << 16 | rxDataV1[13] << 8 | rxDataV1[14]) / CALIB_CUR2);
-//         curL3 = ((rxDataV1[15] << 16 | rxDataV1[16] << 8 | rxDataV1[17]) / CALIB_CUR3);
-//         powL1 = ((rxDataV1[18] << 16 | rxDataV1[19] << 8 | rxDataV1[20]) / CALIB_POW1);
-//         powL2 = ((rxDataV1[21] << 16 | rxDataV1[22] << 8 | rxDataV1[23]) / CALIB_POW2);
-//         powL3 = ((rxDataV1[24] << 16 | rxDataV1[25] << 8 | rxDataV1[26]) / CALIB_POW3);
-//         eneL1 = ((rxDataV1[27] << 16 | rxDataV1[28] << 8 | rxDataV1[29]) / CALIB_ENE1);
-//         eneL2 = ((rxDataV1[30] << 16 | rxDataV1[31] << 8 | rxDataV1[32]) / CALIB_ENE2);
-//         eneL3 = ((rxDataV1[33] << 16 | rxDataV1[34] << 8 | rxDataV1[35]) / CALIB_ENE3);
-//         relayStatus = ((rxDataV1[37] << 8 | rxDataV1[36]));
-//         if (curL1 <= 0.08) {
-// 			curL1 = 0;
-// 			powL1 = 0;
-// 		}
-// 		if (curL2 <= 0.08) {
-// 			curL2 = 0;
-// 			powL2 = 0;
-// 		}
-// 		if (curL3 <= 0.08) {
-// 			curL3 = 0;
-// 			powL3 = 0;
-// 		}
-//         // Serial.printf("volt =%f\nrelay status  %x\n",voltL1,relayStatus);
-       
-//         meterDataValid = true;
-//         meterLastUpdate = millis();
-//     }
-//     // while(Serial.available() == 1){
-//     //     Serial.readBytes(&UARTcommand,1);
-//     //    if(UARTcommand==headerProtection){
-//     //     protectionDetailsSaved = true;
-//     //    }
-
-//     // }
-
-    
-// }
-
 void setup() {
     Serial.setRxBufferSize(256);   // hold >1 STM frame while WiFi is busy
     Serial.begin(115200);
@@ -384,7 +287,7 @@ void setup() {
     initPreferences();
     initProtection();
     initCumulativeEnergy();
-    // initDisplay();          // 2.4" ILI9341 TFT: colour self-test, then the monitoring screen
+    initDisplay();          // 2.4" ILI9341 TFT: colour self-test, then the monitoring screen
     initEventLog();
     initWiFiPortal();
     initWsEvents();
@@ -417,7 +320,7 @@ void loop() {
     }
     // Non-blocking WiFi housekeeping (handleClient + reconnect/AP retry).
     serviceWiFiPortal();
-    // Stream raw UART bursts to rawevent.html over the WebSocket.
+    // WebSocket: push live readings / WiFi / cloud status to the web pages.
     serviceWsEvents();
     // Cloud (MQTT) housekeeping; active only when WiFi is connected + cloud enabled.
     serviceCloud();
@@ -426,5 +329,5 @@ void loop() {
     // Record the boot/restart event to flash once the clock is available.
     serviceEventLog();
     // Refresh the TFT phase-monitoring screen (only changed values are repainted).
-    // serviceDisplay();
+    serviceDisplay();
 }

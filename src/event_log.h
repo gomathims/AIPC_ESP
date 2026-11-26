@@ -43,6 +43,7 @@ void initEventLog();        // mount LittleFS. Call once in setup().
 void serviceEventLog();     // append the deferred boot record once the clock is set. Call from loop().
 void logEvent(uint8_t ev, uint8_t aux);                    // append now, timestamped with the local clock.
 void logEventAt(uint8_t ev, uint8_t aux, uint32_t ts);      // append with an explicit timestamp (e.g. from the STM32).
+String getLogsPageJson(uint32_t page, uint32_t size);  // {"logs":[...],"total","page","size","pages"}; page 0 = newest.
 String getLogsJson();       // {"logs":[{ts,ev,rc}, ...]} newest-first, capped.
 bool clearEventLog();       // delete the log file.
 
